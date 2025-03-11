@@ -32,6 +32,11 @@ const LiquidCodeEditor = () => {
         if (previousSibling && previousSibling.classList?.contains('highlight-liquid')) {
           e.preventDefault();
           previousSibling.remove();
+          
+          // Update content without reapplying highlight
+          const newContent = editorRef.current.innerHTML;
+          setContent(newContent);
+          rawContentRef.current = newContent;
           return;
         }
       }
@@ -45,7 +50,7 @@ const LiquidCodeEditor = () => {
                           parentNode.previousSibling;
         targetSpan.remove();
         
-        // Update content
+        // Update content without reapplying highlight
         const newContent = editorRef.current.innerHTML;
         setContent(newContent);
         rawContentRef.current = newContent;
@@ -201,79 +206,18 @@ const LiquidCodeEditor = () => {
   // Handle content changes in WYSIWYG mode
   const handleWysiwygChange = () => {
     if (editorRef.current) {
-      // Save selection/cursor position
       const selection = window.getSelection();
-      let range = null;
-      let savedSelection = null;
-      
-      if (selection.rangeCount > 0) {
-        range = selection.getRangeAt(0);
-        if (editorRef.current.contains(range.commonAncestorContainer)) {
-          savedSelection = {
-            startContainer: range.startContainer,
-            startOffset: range.startOffset,
-            endContainer: range.endContainer,
-            endOffset: range.endOffset
-          };
-        }
-      }
+      if (!selection.rangeCount) return;
 
-      const wysiwygContent = editorRef.current.innerHTML;
-      
-      // Create a temporary div to work with the content
-      const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = wysiwygContent;
-      
-      // Get all highlight spans
-      const highlightSpans = tempDiv.getElementsByClassName('highlight-liquid');
-      Array.from(highlightSpans).forEach(span => {
-        const previousLength = rawContentRef.current.length;
-        const currentLength = wysiwygContent.length;
-        
-        // Check if content was deleted (backspace/delete pressed)
-        if (currentLength < previousLength) {
-          const spanNode = span.parentNode;
-          const cursorNode = savedSelection?.startContainer?.parentNode;
-          
-          // If cursor is next to this span
-          if (cursorNode && spanNode && 
-              (spanNode.nextSibling === cursorNode || spanNode === cursorNode)) {
-            span.remove();
-          }
-        }
-      });
-      
-      let cleanedContent = tempDiv.innerHTML;
-      
-      setContent(cleanedContent);
-      rawContentRef.current = cleanedContent;
-      
-      // Reapply highlighting
-      const processedContent = processContent();
-      if (editorRef.current.innerHTML !== processedContent) {
-        editorRef.current.innerHTML = processedContent;
-        
-        // Restore selection/cursor position if possible
-        if (savedSelection) {
-          try {
-            // Attempt to restore the selection
-            range = document.createRange();
-            range.setStart(savedSelection.startContainer, savedSelection.startOffset);
-            range.setEnd(savedSelection.endContainer, savedSelection.endOffset);
-            
-            selection.removeAllRanges();
-            selection.addRange(range);
-          } catch (error) {
-            // If we can't restore the exact selection (possibly due to DOM changes),
-            // set cursor at the end as a fallback
-            console.error('Failed to restore selection:', error);
-            const newRange = document.createRange();
-            newRange.selectNodeContents(editorRef.current);
-            newRange.collapse(false);
-            selection.removeAllRanges();
-            selection.addRange(newRange);
-          }
-        }
+      const range = selection.getRangeAt(0);
+      const currentNode = range.startContainer;
+      const parentNode = currentNode.parentNode;
+
+      // Only process content if we're not inside a highlight-liquid span
+      if (!parentNode.classList?.contains('highlight-liquid')) {
+        const wysiwygContent = editorRef.current.innerHTML;
+        setContent(wysiwygContent);
+        rawContentRef.current = wysiwygContent;
       }
     }
   };
