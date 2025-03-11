@@ -13,6 +13,46 @@ const LiquidCodeEditor = () => {
   const initialRender = useRef(true);
   const rawContentRef = useRef(content); // Store original content without highlights
 
+  // Handle backspace key to delete liquid variables
+  const handleKeyDown = (e) => {
+    if (e.key === 'Backspace' && editorRef.current) {
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+
+      const range = selection.getRangeAt(0);
+      if (!range.collapsed) return; // Only handle when cursor is at a single point
+
+      // Get the current node and its parent
+      const currentNode = range.startContainer;
+      const parentNode = currentNode.parentNode;
+
+      // Check if we're at the start of a text node right after a highlight-liquid span
+      if (currentNode.nodeType === Node.TEXT_NODE && range.startOffset === 0) {
+        const previousSibling = currentNode.previousSibling;
+        if (previousSibling && previousSibling.classList?.contains('highlight-liquid')) {
+          e.preventDefault();
+          previousSibling.remove();
+          return;
+        }
+      }
+
+      // Check if we're inside or right after a highlight-liquid span
+      if (parentNode.classList?.contains('highlight-liquid') || 
+          (parentNode.previousSibling?.classList?.contains('highlight-liquid') && range.startOffset === 0)) {
+        e.preventDefault();
+        const targetSpan = parentNode.classList.contains('highlight-liquid') ? 
+                          parentNode : 
+                          parentNode.previousSibling;
+        targetSpan.remove();
+        
+        // Update content
+        const newContent = editorRef.current.innerHTML;
+        setContent(newContent);
+        rawContentRef.current = newContent;
+      }
+    }
+  };
+
   // Function to process the content for display
   const processContent = () => {
     let processedContent = rawContentRef.current;
@@ -179,8 +219,32 @@ const LiquidCodeEditor = () => {
       }
 
       const wysiwygContent = editorRef.current.innerHTML;
-      // Clean the content before updating state
-      const cleanedContent = cleanHighlightTags(wysiwygContent);
+      
+      // Create a temporary div to work with the content
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = wysiwygContent;
+      
+      // Get all highlight spans
+      const highlightSpans = tempDiv.getElementsByClassName('highlight-liquid');
+      Array.from(highlightSpans).forEach(span => {
+        const previousLength = rawContentRef.current.length;
+        const currentLength = wysiwygContent.length;
+        
+        // Check if content was deleted (backspace/delete pressed)
+        if (currentLength < previousLength) {
+          const spanNode = span.parentNode;
+          const cursorNode = savedSelection?.startContainer?.parentNode;
+          
+          // If cursor is next to this span
+          if (cursorNode && spanNode && 
+              (spanNode.nextSibling === cursorNode || spanNode === cursorNode)) {
+            span.remove();
+          }
+        }
+      });
+      
+      let cleanedContent = tempDiv.innerHTML;
+      
       setContent(cleanedContent);
       rawContentRef.current = cleanedContent;
       
@@ -199,9 +263,10 @@ const LiquidCodeEditor = () => {
             
             selection.removeAllRanges();
             selection.addRange(range);
-          } catch (e) {
+          } catch (error) {
             // If we can't restore the exact selection (possibly due to DOM changes),
             // set cursor at the end as a fallback
+            console.error('Failed to restore selection:', error);
             const newRange = document.createRange();
             newRange.selectNodeContents(editorRef.current);
             newRange.collapse(false);
@@ -258,9 +323,10 @@ const LiquidCodeEditor = () => {
               
               selection.removeAllRanges();
               selection.addRange(range);
-            } catch (e) {
+            } catch (error) {
               // If we can't restore the exact selection (possibly due to DOM changes),
               // set cursor at the end as a fallback
+              console.error('Failed to restore selection:', error);
               const newRange = document.createRange();
               newRange.selectNodeContents(editor);
               newRange.collapse(false);
@@ -363,9 +429,10 @@ const LiquidCodeEditor = () => {
             <div 
               id="wysiwyg-editor"
               ref={editorRef}
-              className="min-h-64 p-4 border rounded bg-white preview-content"
+              className="min-h-64 p-4 border rounded bg-white preview-content text-black"
               contentEditable={true}
               onInput={handleWysiwygChange}
+              onKeyDown={handleKeyDown}
               suppressContentEditableWarning={true}
               dangerouslySetInnerHTML={initialRender.current ? { __html: processContent() } : undefined}
             ></div>
@@ -373,7 +440,7 @@ const LiquidCodeEditor = () => {
             // Raw HTML editor
             <textarea
               id="raw-html-editor"
-              className="w-full min-h-64 p-4 font-mono text-sm border rounded bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
+              className="w-full min-h-64 p-4 font-mono text-sm border rounded bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-300 text-black"
               value={content}
               onChange={handleRawHtmlChange}
             />
@@ -381,7 +448,7 @@ const LiquidCodeEditor = () => {
             // Code editor mode
             <textarea
               id="editor-textarea"
-              className="w-full min-h-64 p-4 font-mono text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-300"
+              className="w-full min-h-64 p-4 font-mono text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-300 text-black"
               value={content}
               onChange={(e) => {
                 setContent(e.target.value);
@@ -409,6 +476,7 @@ const LiquidCodeEditor = () => {
             border-radius: 3px;
             color: #1e40af;
             font-weight: bold;
+            font-size: 14px;
           }
           
           .preview-content {
