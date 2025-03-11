@@ -12,7 +12,7 @@ const LiquidCodeEditor = ({ variables = [] }) => {
 {% capture email_body %}
   {% if has_pending_payment %}
     {% if buyer_action_required %}
-      You’ll get a confirmation email after completing your payment.
+      You'll get a confirmation email after completing your payment.
     {% else %}
       Your payment is being processed. You'll get an email when your order is confirmed.
     {% endif %}
@@ -20,7 +20,7 @@ const LiquidCodeEditor = ({ variables = [] }) => {
     {% if requires_shipping %}
     {% case delivery_method %}
         {% when 'pick-up' %}
-          You’ll receive an email when your order is ready for pickup.
+          You'll receive an email when your order is ready for pickup.
         {% when 'local' %}
           Hi {{ customer.first_name }}, we're getting your order ready for delivery.
         {% else %}
@@ -52,7 +52,7 @@ const LiquidCodeEditor = ({ variables = [] }) => {
   {% if found_gift_card_with_recipient_email %}
     <p>Your gift card recipient will receive an email with their gift card code.</p>
   {% elsif gift_card_line_items.first %}
-    <p>You’ll receive separate emails for any gift cards.</p>
+    <p>You'll receive separate emails for any gift cards.</p>
   {% endif %}
 {% endcapture %}`);
   const [previewMode, setPreviewMode] = useState(false);
@@ -334,50 +334,6 @@ const LiquidCodeEditor = ({ variables = [] }) => {
   // Handle content changes in WYSIWYG mode
   const handleWysiwygChange = () => {
     if (!editorRef.current) return;
-
-    // Get current selection
-    const selection = window.getSelection();
-    if (!selection.rangeCount) return;
-
-    const range = selection.getRangeAt(0);
-    const container = range.startContainer;
-    const parentNode = container.parentNode;
-
-    // Check if we're inside a highlight-liquid span
-    if (parentNode.classList?.contains('highlight-liquid')) {
-      // Get the text content
-      const text = parentNode.textContent;
-      const liquidMatch = text.match(/{{\s*[\w.]+\s*}}/);
-
-      if (liquidMatch) {
-        // If there's text after the liquid variable
-        if (text.length > liquidMatch[0].length) {
-          // Get the text after the liquid variable
-          const afterText = text.substring(liquidMatch[0].length);
-          
-          // Create a new text node for the content after the liquid variable
-          const textNode = document.createTextNode(afterText);
-          
-          // Update the highlight span to only contain the liquid variable
-          parentNode.textContent = liquidMatch[0];
-          
-          // Insert the text node after the highlight span
-          if (parentNode.nextSibling) {
-            parentNode.parentNode.insertBefore(textNode, parentNode.nextSibling);
-          } else {
-            parentNode.parentNode.appendChild(textNode);
-          }
-
-          // Move cursor to the end of the new text
-          range.setStart(textNode, afterText.length);
-          range.setEnd(textNode, afterText.length);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        }
-      }
-    }
-
-    // Update content state
     const newContent = editorRef.current.innerHTML;
     setContent(newContent);
     rawContentRef.current = newContent;
@@ -405,13 +361,35 @@ const LiquidCodeEditor = ({ variables = [] }) => {
 
     const variableText = `{{ ${variable.name} }}`;
     
+    // Create a temporary container
+    const tempContainer = document.createElement('div');
+    
     // Create the highlight span
     const span = document.createElement('span');
     span.className = 'highlight-liquid';
     span.textContent = variableText;
     
-    // Insert the span and a space
-    document.execCommand('insertHTML', false, span.outerHTML + '\u00A0');
+    // Create a text node for the space
+    const spaceNode = document.createTextNode('\u00A0');
+    
+    // Add elements to container
+    tempContainer.appendChild(span);
+    tempContainer.appendChild(spaceNode);
+    
+    // Get current selection
+    const selection = window.getSelection();
+    const range = selection.getRangeAt(0);
+    
+    // Insert the content
+    range.deleteContents();
+    const fragment = range.createContextualFragment(tempContainer.innerHTML);
+    range.insertNode(fragment);
+    
+    // Move cursor after the space
+    range.setStartAfter(spaceNode);
+    range.setEndAfter(spaceNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
 
     // Update content state
     const newContent = editorRef.current.innerHTML;
