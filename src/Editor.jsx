@@ -11,11 +11,8 @@ import {
   Heading1,
   Heading2,
   Heading3,
-  Link,
   Eye,
   EyeOff,
-  Code2,
-  FileCode,
 } from "lucide-react";
 
 const LiquidCodeEditor = ({ variables = [] }) => {
@@ -265,9 +262,6 @@ const LiquidCodeEditor = ({ variables = [] }) => {
         break;
       case "h3":
         newText = `<h3>${selectedText}</h3>`;
-        break;
-      case "link":
-        newText = `<a href="#">${selectedText}</a>`;
         break;
 
       case "align-left":
@@ -609,17 +603,6 @@ const LiquidCodeEditor = ({ variables = [] }) => {
         >
           <AlignRight size={18} />
         </button>
-        <span className="mx-2 h-6 border-l border-gray-300"></span>
-
-        <button
-          onClick={() => handleToolbarAction("link")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Insert Link"
-        >
-          <Link size={18} />
-        </button>
-
-        <span className="mx-2 h-6 border-l border-gray-300"></span>
 
         <button
           onClick={togglePreviewMode}
@@ -710,11 +693,8 @@ const LiquidCodeEditor = ({ variables = [] }) => {
       </div>
 
       {/* Status bar */}
-      <div className="flex justify-between items-center px-4 py-2 border-t bg-gray-50 text-xs text-gray-500">
+      <div className="flex justify-end items-center px-4 py-2 border-t bg-gray-50 text-xs text-gray-500">
         <div>{content.length} characters</div>
-        <div className="flex space-x-4">
-          <span>Mode: {previewMode ? "WYSIWYG Editor" : "Code Editor"}</span>
-        </div>
       </div>
 
       <style>{`
@@ -779,22 +759,6 @@ const LiquidCodeEditor = ({ variables = [] }) => {
           .preview-content a {
             color: #2563eb;
             text-decoration: underline;
-          }
-          .preview-content img {
-            max-width: 100%;
-            height: auto;
-          }
-          .preview-content .available {
-            color: #16a34a;
-            font-weight: bold;
-          }
-          .preview-content .unavailable {
-            color: #dc2626;
-            font-weight: bold;
-          }
-          .preview-content .price {
-            font-size: 1.1em;
-            color: #4b5563;
           }
         `}</style>
     </div>
