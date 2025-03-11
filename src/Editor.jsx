@@ -1,20 +1,53 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Bold, Italic, Code, List, ListOrdered, AlignLeft, AlignCenter, AlignRight, Heading1, Heading2, Heading3, Link, Image, Eye, EyeOff, Code2, FileCode } from 'lucide-react';
 
-const LiquidCodeEditor = () => {
+const LiquidCodeEditor = ({ variables = [] }) => {
   const [content, setContent] = useState('<div class="product">\n  <h1>{{ product.title }}</h1>\n  <h2>Product Details</h2>\n  <p>{{ product.description }}</p>\n  {% if product.available %}\n    <span class="available">In stock</span>\n  {% else %}\n    <span class="unavailable">Sold out</span>\n  {% endif %}\n  <p class="price"><strong>Price:</strong> {{ product.price | money }}</p>\n</div>');
   const [previewMode, setPreviewMode] = useState(false);
   const [hideLiquidTags, setHideLiquidTags] = useState(true);
   const [renderHTML, setRenderHTML] = useState(true);
+  const [showVariablePopover, setShowVariablePopover] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
+  const [filteredVariables, setFilteredVariables] = useState(variables);
+  const [searchTerm, setSearchTerm] = useState('');
+  const popoverRef = useRef(null);
   
   // Refs for managing cursor position
   const editorRef = useRef(null);
   const wasInWysiwygMode = useRef(false);
   const initialRender = useRef(true);
   const rawContentRef = useRef(content); // Store original content without highlights
+  const [savedRange, setSavedRange] = useState(null);
 
-  // Handle backspace key to delete liquid variables
+  // Handle key press for variable suggestions and deletion
   const handleKeyDown = (e) => {
+    if (e.key === '{') {
+      const selection = window.getSelection();
+      if (!selection.rangeCount) return;
+
+      const range = selection.getRangeAt(0);
+      // Save the current range for later use
+      setSavedRange(range.cloneRange());
+
+      const rect = range.getBoundingClientRect();
+      const editorRect = editorRef.current.getBoundingClientRect();
+      
+      // Calculate position relative to editor
+      const x = rect.left - editorRect.left + editorRef.current.scrollLeft;
+      const y = rect.top - editorRect.top + editorRef.current.scrollTop;
+      
+      // Position popover above the cursor with a small offset
+      setPopoverPosition({
+        x,
+        y: Math.max(0, y - 10)
+      });
+      
+      setFilteredVariables(variables);
+      setShowVariablePopover(true);
+      e.preventDefault();
+      return;
+    }
+
     if (e.key === 'Backspace' && editorRef.current) {
       const selection = window.getSelection();
       if (!selection.rangeCount) return;
@@ -26,7 +59,7 @@ const LiquidCodeEditor = () => {
       const currentNode = range.startContainer;
       const parentNode = currentNode.parentNode;
 
-      // Check if we're at the start of a text node right after a highlight-liquid span
+      // Case 1: Cursor is at the start of a text node right after a highlight-liquid span
       if (currentNode.nodeType === Node.TEXT_NODE && range.startOffset === 0) {
         const previousSibling = currentNode.previousSibling;
         if (previousSibling && previousSibling.classList?.contains('highlight-liquid')) {
@@ -41,20 +74,44 @@ const LiquidCodeEditor = () => {
         }
       }
 
-      // Check if we're inside or right after a highlight-liquid span
-      if (parentNode.classList?.contains('highlight-liquid') || 
-          (parentNode.previousSibling?.classList?.contains('highlight-liquid') && range.startOffset === 0)) {
+      // Case 2: Cursor is at the end of or inside a highlight-liquid span
+      if (parentNode.classList?.contains('highlight-liquid')) {
         e.preventDefault();
-        const targetSpan = parentNode.classList.contains('highlight-liquid') ? 
-                          parentNode : 
-                          parentNode.previousSibling;
-        targetSpan.remove();
+        const cursorAtEnd = range.startOffset === parentNode.textContent.length;
+        
+        if (cursorAtEnd) {
+          // If cursor is at the end, move it before deleting
+          range.setStartBefore(parentNode);
+          range.setEndBefore(parentNode);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        }
+        
+        parentNode.remove();
+        
+        // Update content without reapplying highlight
+        const newContent = editorRef.current.innerHTML;
+        setContent(newContent);
+        rawContentRef.current = newContent;
+        return;
+      }
+
+      // Case 3: Cursor is right after a highlight-liquid span
+      const previousElement = parentNode.previousElementSibling;
+      if (previousElement?.classList?.contains('highlight-liquid') && range.startOffset === 0) {
+        e.preventDefault();
+        previousElement.remove();
         
         // Update content without reapplying highlight
         const newContent = editorRef.current.innerHTML;
         setContent(newContent);
         rawContentRef.current = newContent;
       }
+    }
+
+    // Close popover on Escape
+    if (e.key === 'Escape') {
+      setShowVariablePopover(false);
     }
   };
 
@@ -183,9 +240,36 @@ const LiquidCodeEditor = () => {
     }
   };
     
+  const cleanContent = (htmlContent) => {
+    // First clean highlight spans
+    let cleaned = cleanHighlightTags(htmlContent);
+    
+    // Remove empty/unnecessary spans
+    cleaned = cleaned.replace(/<span[^>]*>\s*<\/span>/g, '');
+    
+    // Remove multiple spaces
+    cleaned = cleaned.replace(/\s+/g, ' ');
+    
+    // Remove spaces before/after HTML tags
+    cleaned = cleaned.replace(/\s*(<[^>]+>)\s*/g, '$1');
+    
+    // Remove unnecessary &nbsp;
+    cleaned = cleaned.replace(/&nbsp;/g, ' ');
+    
+    return cleaned;
+  };
+
+  const toggleRenderHTML = () => {
+    // Clean content thoroughly when switching modes
+    const cleanedContent = cleanContent(content);
+    setContent(cleanedContent);
+    rawContentRef.current = cleanedContent;
+    setRenderHTML(!renderHTML);
+  };
+
   const togglePreviewMode = () => {
-    // Clean content when switching modes
-    const cleanedContent = cleanHighlightTags(content);
+    // Also clean content when switching preview mode
+    const cleanedContent = cleanContent(content);
     setContent(cleanedContent);
     rawContentRef.current = cleanedContent;
     setPreviewMode(!previewMode);
@@ -195,30 +279,12 @@ const LiquidCodeEditor = () => {
     setHideLiquidTags(!hideLiquidTags);
   };
   
-  const toggleRenderHTML = () => {
-    // Clean content when switching between HTML and raw modes
-    const cleanedContent = cleanHighlightTags(content);
-    setContent(cleanedContent);
-    rawContentRef.current = cleanedContent;
-    setRenderHTML(!renderHTML);
-  };
-
   // Handle content changes in WYSIWYG mode
   const handleWysiwygChange = () => {
     if (editorRef.current) {
-      const selection = window.getSelection();
-      if (!selection.rangeCount) return;
-
-      const range = selection.getRangeAt(0);
-      const currentNode = range.startContainer;
-      const parentNode = currentNode.parentNode;
-
-      // Only process content if we're not inside a highlight-liquid span
-      if (!parentNode.classList?.contains('highlight-liquid')) {
-        const wysiwygContent = editorRef.current.innerHTML;
-        setContent(wysiwygContent);
-        rawContentRef.current = wysiwygContent;
-      }
+      const wysiwygContent = editorRef.current.innerHTML;
+      setContent(wysiwygContent);
+      rawContentRef.current = wysiwygContent;
     }
   };
   
@@ -227,6 +293,51 @@ const LiquidCodeEditor = () => {
     setContent(e.target.value);
     rawContentRef.current = e.target.value;
   };
+
+  // Insert variable at cursor position
+  const insertVariable = (variable) => {
+    if (!editorRef.current) return;
+
+    // Focus the editor
+    editorRef.current.focus();
+
+    // Restore the saved range if it exists
+    if (savedRange) {
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(savedRange);
+    }
+
+    const variableText = `{{ ${variable.name} }}`;
+    const html = `<span class="highlight-liquid">${variableText}</span>&nbsp;`;
+    
+    // Insert the HTML at the current selection
+    document.execCommand('insertHTML', false, html);
+
+    // Update content state
+    const newContent = editorRef.current.innerHTML;
+    setContent(newContent);
+    rawContentRef.current = newContent;
+
+    // Clear saved range and close popover
+    setSavedRange(null);
+    setShowVariablePopover(false);
+  };
+
+  // Close popover and clear saved range when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target)) {
+        setShowVariablePopover(false);
+        setSavedRange(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // This effect initializes the contentEditable div when needed
   useEffect(() => {
@@ -288,6 +399,29 @@ const LiquidCodeEditor = () => {
     // Mark that we're past the initial render
     initialRender.current = false;
   }, [previewMode, renderHTML, hideLiquidTags]);
+
+  // Update filteredVariables when variables prop changes
+  useEffect(() => {
+    setFilteredVariables(variables);
+  }, [variables]);
+
+  // Filter variables based on search term
+  useEffect(() => {
+    if (searchTerm) {
+      const filtered = variables.filter(variable => 
+        variable.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        variable.description.toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredVariables(filtered);
+    } else {
+      setFilteredVariables(variables);
+    }
+  }, [searchTerm, variables]);
+
+  // Handle search input change
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto border rounded-lg shadow-lg bg-white">
@@ -366,20 +500,66 @@ const LiquidCodeEditor = () => {
       </div>
 
       {/* Editor/Preview Area */}
-      <div className="p-4">
+      <div className="p-4 relative">
         {previewMode ? (
           renderHTML ? (
             // WYSIWYG HTML editor
-            <div 
-              id="wysiwyg-editor"
-              ref={editorRef}
-              className="min-h-64 p-4 border rounded bg-white preview-content text-black"
-              contentEditable={true}
-              onInput={handleWysiwygChange}
-              onKeyDown={handleKeyDown}
-              suppressContentEditableWarning={true}
-              dangerouslySetInnerHTML={initialRender.current ? { __html: processContent() } : undefined}
-            ></div>
+            <>
+              <div 
+                id="wysiwyg-editor"
+                ref={editorRef}
+                className="min-h-64 p-4 border rounded bg-white preview-content text-black"
+                contentEditable={true}
+                onInput={handleWysiwygChange}
+                onKeyDown={handleKeyDown}
+                suppressContentEditableWarning={true}
+                dangerouslySetInnerHTML={initialRender.current ? { __html: processContent() } : undefined}
+              ></div>
+              
+              {/* Variables Popover */}
+              {showVariablePopover && (
+                <div
+                  ref={popoverRef}
+                  className="absolute bg-white border rounded-lg shadow-lg p-2 z-50 max-h-60 w-64"
+                  style={{
+                    left: `${popoverPosition.x}px`,
+                    top: `${popoverPosition.y}px`,
+                    transform: 'translateY(-100%)' // Move entire popover above the position
+                  }}
+                >
+                  {/* Search input */}
+                  <div className="sticky top-0 bg-white p-2 border-b">
+                    <input
+                      type="text"
+                      placeholder="Search variables..."
+                      className="w-full px-2 py-1 border rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                      value={searchTerm}
+                      onChange={handleSearchChange}
+                    />
+                  </div>
+                  
+                  {/* Variables list */}
+                  <div className="overflow-y-auto max-h-48">
+                    {filteredVariables.length > 0 ? (
+                      filteredVariables.map((variable, index) => (
+                        <div
+                          key={index}
+                          className="p-2 hover:bg-blue-50 cursor-pointer flex flex-col"
+                          onClick={() => insertVariable(variable)}
+                        >
+                          <span className="font-medium text-blue-600">{variable.name}</span>
+                          <span className="text-sm text-gray-500">{variable.description}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-2 text-gray-500 text-center">
+                        No variables found
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </>
           ) : (
             // Raw HTML editor
             <textarea
