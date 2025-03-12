@@ -972,6 +972,7 @@ const EditorStyles = () => (
       color: #2563eb;
       text-decoration: underline;
     }
+      
   `}</style>
 );
 
