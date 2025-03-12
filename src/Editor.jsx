@@ -1,19 +1,17 @@
 import React, { useState, useRef, useEffect } from "react";
+import { ButtonGroup, Button, Icon, Divider } from "@shopify/polaris";
 import {
-  Bold,
-  Italic,
-  Code,
-  List,
-  ListOrdered,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Heading1,
-  Heading2,
-  Heading3,
-  Eye,
-  EyeOff,
-} from "lucide-react";
+  TextBoldIcon,
+  TextItalicIcon,
+  CodeIcon,
+  TextFontIcon,
+  ListBulletedIcon,
+  TextAlignLeftIcon,
+  TextAlignCenterIcon,
+  TextAlignRightIcon,
+  ViewIcon,
+  HideIcon,
+} from "@shopify/polaris-icons";
 
 // components/ToolbarButton.jsx
 const ToolbarButton = ({ icon, onClick, title }) => {
@@ -45,7 +43,7 @@ const useEditorState = (initialContent) => {
     rawContentRef,
     editorRef,
     wasInWysiwygMode,
-    initialRender
+    initialRender,
   };
 };
 
@@ -64,7 +62,9 @@ const useVariablePopover = (variables) => {
       const filtered = variables.filter(
         (variable) =>
           variable.name.toLowerCase().includes(term.toLowerCase()) ||
-          (variable.description || "").toLowerCase().includes(term.toLowerCase())
+          (variable.description || "")
+            .toLowerCase()
+            .includes(term.toLowerCase())
       );
       setFilteredVariables(filtered);
     } else {
@@ -86,7 +86,7 @@ const useVariablePopover = (variables) => {
     handleSearch,
     savedRange,
     setSavedRange,
-    popoverRef
+    popoverRef,
   };
 };
 
@@ -115,32 +115,84 @@ const cleanHighlightTags = (htmlContent) => {
 // components/Toolbar.jsx
 const Toolbar = ({ onToolbarAction, previewMode, onTogglePreview }) => {
   return (
-    <div className="flex flex-wrap items-center p-2 border-b bg-gray-50">
-      <ToolbarButton icon={<Bold size={18} />} onClick={() => onToolbarAction("bold")} title="Bold" />
-      <ToolbarButton icon={<Italic size={18} />} onClick={() => onToolbarAction("italic")} title="Italic" />
-      <ToolbarButton icon={<Code size={18} />} onClick={() => onToolbarAction("code")} title="Code" />
-      <span className="mx-2 h-6 border-l border-gray-300"></span>
+    <div className="flex items-center justify-start gap-x-3 p-2 border-b bg-surface">
+      <Button
+        icon={<Icon source={TextBoldIcon} />}
+        onClick={() => onToolbarAction("bold")}
+        tooltip="Bold"
+        size="slim"
+      />
+      <Button
+        icon={<Icon source={TextItalicIcon} />}
+        onClick={() => onToolbarAction("italic")}
+        tooltip="Italic"
+        size="slim"
+      />
+      <Button
+        icon={<Icon source={CodeIcon} />}
+        onClick={() => onToolbarAction("code")}
+        tooltip="Code"
+        size="slim"
+      />
 
-      <ToolbarButton icon={<Heading1 size={18} />} onClick={() => onToolbarAction("h1")} title="Heading 1" />
-      <ToolbarButton icon={<Heading2 size={18} />} onClick={() => onToolbarAction("h2")} title="Heading 2" />
-      <ToolbarButton icon={<Heading3 size={18} />} onClick={() => onToolbarAction("h3")} title="Heading 3" />
-      <span className="mx-2 h-6 border-l border-gray-300"></span>
+      <Button
+        icon={<Icon source={TextFontIcon} />}
+        onClick={() => onToolbarAction("h1")}
+        tooltip="Heading 1"
+        size="slim"
+      />
+      <Button
+        icon={<Icon source={TextFontIcon} />}
+        onClick={() => onToolbarAction("h2")}
+        tooltip="Heading 2"
+        size="slim"
+      />
+      <Button
+        icon={<Icon source={TextFontIcon} />}
+        onClick={() => onToolbarAction("h3")}
+        tooltip="Heading 3"
+        size="slim"
+      />
 
-      <ToolbarButton icon={<List size={18} />} onClick={() => onToolbarAction("ul")} title="Unordered List" />
-      <ToolbarButton icon={<ListOrdered size={18} />} onClick={() => onToolbarAction("ol")} title="Ordered List" />
-      <span className="mx-2 h-6 border-l border-gray-300"></span>
+      <Button
+        icon={<Icon source={ListBulletedIcon} />}
+        onClick={() => onToolbarAction("ul")}
+        tooltip="Unordered List"
+        size="slim"
+      />
+      <Button
+        icon={<Icon source={ListBulletedIcon} />}
+        onClick={() => onToolbarAction("ol")}
+        tooltip="Ordered List"
+        size="slim"
+      />
 
-      <ToolbarButton icon={<AlignLeft size={18} />} onClick={() => onToolbarAction("align-left")} title="Align Left" />
-      <ToolbarButton icon={<AlignCenter size={18} />} onClick={() => onToolbarAction("align-center")} title="Align Center" />
-      <ToolbarButton icon={<AlignRight size={18} />} onClick={() => onToolbarAction("align-right")} title="Align Right" />
+      <Button
+        icon={<Icon source={TextAlignLeftIcon} />}
+        onClick={() => onToolbarAction("align-left")}
+        tooltip="Align Left"
+        size="slim"
+      />
+      <Button
+        icon={<Icon source={TextAlignCenterIcon} />}
+        onClick={() => onToolbarAction("align-center")}
+        tooltip="Align Center"
+        size="slim"
+      />
+      <Button
+        icon={<Icon source={TextAlignRightIcon} />}
+        onClick={() => onToolbarAction("align-right")}
+        tooltip="Align Right"
+        size="slim"
+      />
 
-      <button
+      <Button
+        icon={<Icon source={previewMode ? HideIcon : ViewIcon} />}
         onClick={onTogglePreview}
-        className={`p-1.5 mx-1 rounded hover:bg-gray-200 ${previewMode ? "bg-blue-100" : ""}`}
-        title="Toggle Edit/Preview"
-      >
-        {previewMode ? <EyeOff size={18} /> : <Eye size={18} />}
-      </button>
+        pressed={previewMode}
+        tooltip="Toggle Edit/Preview"
+        size="slim"
+      />
     </div>
   );
 };
@@ -153,7 +205,7 @@ const VariablePopover = ({
   onSearchChange,
   filteredVariables,
   onVariableSelect,
-  popoverRef
+  popoverRef,
 }) => {
   if (!show) return null;
 
@@ -188,7 +240,9 @@ const VariablePopover = ({
             </div>
           ))
         ) : (
-          <div className="p-2 text-gray-500 text-center">No variables found</div>
+          <div className="p-2 text-gray-500 text-center">
+            No variables found
+          </div>
         )}
       </div>
     </div>
@@ -208,7 +262,7 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     rawContentRef,
     editorRef,
     wasInWysiwygMode,
-    initialRender
+    initialRender,
   } = useEditorState(value);
 
   const {
@@ -218,7 +272,7 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     setPopoverPosition,
     savedRange,
     setSavedRange,
-    popoverRef
+    popoverRef,
   } = useVariablePopover(variables);
 
   // Update filtered variables when search term changes
@@ -227,7 +281,9 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
       const filtered = variables.filter(
         (variable) =>
           variable.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (variable.description || "").toLowerCase().includes(searchTerm.toLowerCase())
+          (variable.description || "")
+            .toLowerCase()
+            .includes(searchTerm.toLowerCase())
       );
       setFilteredVariables(filtered);
     } else {
@@ -623,26 +679,28 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto border rounded-lg shadow-lg bg-white">
+    <div className="flex flex-col w-full border rounded-lg shadow-lg bg-white">
       <Toolbar
         onToolbarAction={handleToolbarAction}
         previewMode={previewMode}
         onTogglePreview={togglePreviewMode}
       />
 
-      <div className="p-4 relative">
+      <div className="p-4 relative w-full min-h-64">
         {previewMode ? (
           <>
             <div
               id="wysiwyg-editor"
               ref={editorRef}
-              className="min-h-64 p-4 border rounded bg-white preview-content text-black"
+              className="w-full min-h-64 p-4 border rounded bg-white preview-content text-black"
               contentEditable={true}
               onInput={handleWysiwygChange}
               onKeyDown={handleKeyDown}
               suppressContentEditableWarning={true}
               dangerouslySetInnerHTML={
-                initialRender.current ? { __html: processContent(rawContentRef.current) } : undefined
+                initialRender.current
+                  ? { __html: processContent(rawContentRef.current) }
+                  : undefined
               }
             />
             <VariablePopover
@@ -658,7 +716,7 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
         ) : (
           <textarea
             id="editor-textarea"
-            className="w-full min-h-64 p-4 font-mono text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-300 text-black"
+            className="w-full min-h-64 p-4 border rounded bg-white text-black"
             value={content}
             onChange={(e) => {
               setContent(e.target.value);
@@ -689,56 +747,68 @@ const EditorStyles = () => (
       font-size: 14px;
     }
     
-    .preview-content {
+    .preview-content, #editor-textarea {
       min-height: 16rem;
+      font-size: 16px;
+      line-height: 1.5;
+      color: #1f2937;
     }
     
-    .preview-content h1 {
+    #editor-textarea {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      resize: vertical;
+    }
+    
+    .preview-content h1, #editor-textarea h1 {
       font-size: 2em;
       font-weight: bold;
       margin-top: 0.67em;
       margin-bottom: 0.67em;
     }
-    .preview-content h2 {
+    .preview-content h2, #editor-textarea h2 {
       font-size: 1.5em;
       font-weight: bold;
       margin-top: 0.83em;
       margin-bottom: 0.83em;
     }
-    .preview-content h3 {
+    .preview-content h3, #editor-textarea h3 {
       font-size: 1.17em;
       font-weight: bold;
       margin-top: 1em;
       margin-bottom: 1em;
     }
-    .preview-content p {
+    .preview-content p, #editor-textarea p {
       margin-top: 1em;
       margin-bottom: 1em;
     }
-    .preview-content strong, .preview-content b {
+    .preview-content strong, .preview-content b,
+    #editor-textarea strong, #editor-textarea b {
       font-weight: bold;
     }
-    .preview-content em, .preview-content i {
+    .preview-content em, .preview-content i,
+    #editor-textarea em, #editor-textarea i {
       font-style: italic;
     }
-    .preview-content code {
+    .preview-content code, #editor-textarea code {
       font-family: monospace;
       background-color: #f3f4f6;
       padding: 0.125em 0.25em;
       border-radius: 0.25em;
     }
-    .preview-content ul, .preview-content ol {
+    .preview-content ul, .preview-content ol,
+    #editor-textarea ul, #editor-textarea ol {
       padding-left: 2em;
       margin-top: 1em;
       margin-bottom: 1em;
     }
-    .preview-content ul {
+    .preview-content ul, #editor-textarea ul {
       list-style-type: disc;
     }
-    .preview-content ol {
+    .preview-content ol, #editor-textarea ol {
       list-style-type: decimal;
     }
-    .preview-content a {
+    .preview-content a, #editor-textarea a {
       color: #2563eb;
       text-decoration: underline;
     }
@@ -747,10 +817,16 @@ const EditorStyles = () => (
 
 const LiquidCodeEditorWrapper = () => {
   const variables = [
-    { name: 'product.title', description: 'The title of the product' },
-    { name: 'product.description', description: 'The description of the product' },
-    { name: 'product.price', description: 'The price of the product' },
-    { name: 'product.available', description: 'Whether the product is available' },
+    { name: "product.title", description: "The title of the product" },
+    {
+      name: "product.description",
+      description: "The description of the product",
+    },
+    { name: "product.price", description: "The price of the product" },
+    {
+      name: "product.available",
+      description: "Whether the product is available",
+    },
   ];
   const value = `{% capture email_title %}
     {% if has_pending_payment %}
@@ -805,12 +881,8 @@ const LiquidCodeEditorWrapper = () => {
       <p>You'll receive separate emails for any gift cards.</p>
     {% endif %}
   {% endcapture %}`;
-  
-  return (
-    <div>
-      <LiquidCodeEditor variables={variables} value={value} />
-    </div>
-  );
+
+  return <LiquidCodeEditor variables={variables} value={value} />;
 };
 
 export default LiquidCodeEditorWrapper;
