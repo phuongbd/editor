@@ -76,7 +76,6 @@ const useVariablePopover = (variables) => {
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [filteredVariables, setFilteredVariables] = useState(variables);
   const [searchTerm, setSearchTerm] = useState("");
-  const [savedRange, setSavedRange] = useState(null);
   const popoverRef = useRef(null);
 
   const handleSearch = (term) => {
@@ -105,11 +104,128 @@ const useVariablePopover = (variables) => {
     popoverPosition,
     setPopoverPosition,
     filteredVariables,
+    setFilteredVariables,
     searchTerm,
     handleSearch,
-    savedRange,
-    setSavedRange,
     popoverRef,
+  };
+};
+
+// hooks/useSelection.js
+const useSelection = (editorRef, previewMode) => {
+  const [savedRange, setSavedRange] = useState(null);
+
+  const getCurrentSelection = () => {
+    if (!previewMode) {
+      const editor = document.getElementById("editor-textarea");
+      return {
+        start: editor.selectionStart,
+        end: editor.selectionEnd,
+        text: editor.value.substring(editor.selectionStart, editor.selectionEnd)
+      };
+    }
+
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return null;
+
+    const range = selection.getRangeAt(0);
+    return {
+      range: range.cloneRange(),
+      text: selection.toString()
+    };
+  };
+
+  const setSelection = (start, end) => {
+    if (!previewMode) {
+      const editor = document.getElementById("editor-textarea");
+      editor.setSelectionRange(start, end);
+      editor.focus();
+      return;
+    }
+
+    if (!editorRef.current) return;
+    
+    const selection = window.getSelection();
+    const range = document.createRange();
+    
+    try {
+      range.setStart(start.container || start, start.offset || 0);
+      range.setEnd(end.container || end, end.offset || 0);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      editorRef.current.focus();
+    } catch (error) {
+      console.error("Failed to restore selection:", error);
+    }
+  };
+
+  const saveCurrentSelection = () => {
+    const selection = getCurrentSelection();
+    if (selection) {
+      setSavedRange(selection);
+    }
+  };
+
+  const restoreSavedSelection = () => {
+    if (!savedRange) return;
+
+    if (!previewMode) {
+      setSelection(savedRange.start, savedRange.end);
+    } else if (savedRange.range) {
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(savedRange.range);
+    }
+  };
+
+  const insertAtCursor = (content, options = {}) => {
+    const { selectInserted = false, wrapWithSpaces = false } = options;
+    
+    if (!previewMode) {
+      const editor = document.getElementById("editor-textarea");
+      const start = editor.selectionStart;
+      const end = editor.selectionEnd;
+      const textToInsert = wrapWithSpaces ? ` ${content} ` : content;
+      
+      editor.value = editor.value.substring(0, start) + 
+                     textToInsert + 
+                     editor.value.substring(end);
+      
+      if (selectInserted) {
+        setSelection(start, start + textToInsert.length);
+      } else {
+        setSelection(start + textToInsert.length, start + textToInsert.length);
+      }
+      return editor.value;
+    }
+
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    range.deleteContents();
+
+    const fragment = range.createContextualFragment(content);
+    range.insertNode(fragment);
+
+    if (!selectInserted) {
+      // Move cursor to end of inserted content
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+
+    return editorRef.current?.innerHTML;
+  };
+
+  return {
+    getCurrentSelection,
+    setSelection,
+    saveCurrentSelection,
+    restoreSavedSelection,
+    insertAtCursor,
+    savedRange,
+    setSavedRange
   };
 };
 
@@ -326,53 +442,37 @@ const LiquidCodeEditor = ({ value = "" }) => {
     setShowVariablePopover,
     popoverPosition,
     setPopoverPosition,
-    savedRange,
-    setSavedRange,
+    filteredVariables,
+    setFilteredVariables,
+    searchTerm,
+    handleSearch,
     popoverRef,
   } = useVariablePopover(variables);
 
-  const [filteredVariables, setFilteredVariables] = useState(variables);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // Update filtered variables when search term changes
-  useEffect(() => {
-    if (searchTerm) {
-      const filtered = variables.filter(
-        (variable) =>
-          variable.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (variable.description || "")
-            .toLowerCase()
-            .includes(searchTerm.toLowerCase())
-      );
-      setFilteredVariables(filtered);
-    } else {
-      setFilteredVariables(variables);
-    }
-  }, [searchTerm, variables]);
+  const selection = useSelection(editorRef, previewMode);
 
   // Update filtered variables when variables prop changes
   useEffect(() => {
-    setFilteredVariables(variables);
-  }, [variables]);
+    handleSearch(searchTerm || "");
+  }, [variables, searchTerm, handleSearch]);
 
   // Handle key press for variable suggestions and deletion
   const handleKeyDown = (e) => {
     if (e.key === "{") {
-      const selection = window.getSelection();
-      if (!selection.rangeCount) return;
+      selection.saveCurrentSelection();
 
-      const range = selection.getRangeAt(0);
-      // Save the current range for later use
-      setSavedRange(range.cloneRange());
+      const selectionInfo = selection.getCurrentSelection();
+      if (!selectionInfo || !editorRef.current) return;
+
+      const range = selectionInfo.range;
+      if (!range) return;
 
       const rect = range.getBoundingClientRect();
       const editorRect = editorRef.current.getBoundingClientRect();
 
-      // Calculate position relative to editor
       const x = rect.left - editorRect.left + editorRef.current.scrollLeft;
       const y = rect.top - editorRect.top + editorRef.current.scrollTop;
 
-      // Position popover above the cursor with a small offset
       setPopoverPosition({
         x,
         y: Math.max(0, y - 10),
@@ -459,23 +559,10 @@ const LiquidCodeEditor = ({ value = "" }) => {
 
   // Handle toolbar actions
   const handleToolbarAction = (action) => {
-    // Get current selection from the active editor
-    let activeEditor;
-    let start, end, selectedText;
+    const selectedContent = selection.getCurrentSelection();
+    if (!selectedContent) return;
 
-    if (previewMode) {
-      activeEditor = document.getElementById("wysiwyg-editor");
-      // For contentEditable, we need to use window.getSelection()
-      const selection = window.getSelection();
-      // This is a simplification - real-world implementation would need more handling
-      selectedText = selection.toString();
-    } else {
-      activeEditor = document.getElementById("editor-textarea");
-      start = activeEditor.selectionStart;
-      end = activeEditor.selectionEnd;
-      selectedText = activeEditor.value.substring(start, end);
-    }
-
+    const selectedText = selectedContent.text;
     let newText;
 
     switch (action) {
@@ -519,19 +606,8 @@ const LiquidCodeEditor = ({ value = "" }) => {
         return;
     }
 
-    // Insert the new text based on the active editor
-    if (previewMode) {
-      // WYSIWYG mode - insert HTML directly at cursor
-      document.execCommand("insertHTML", false, newText);
-    } else {
-      // Raw text mode - update the text value
-      const originalText = previewMode
-        ? activeEditor.value
-        : rawContentRef.current;
-      const newContent =
-        originalText.substring(0, start) +
-        newText +
-        originalText.substring(end);
+    const newContent = selection.insertAtCursor(newText);
+    if (newContent) {
       setContent(newContent);
       rawContentRef.current = newContent;
     }
@@ -687,55 +763,22 @@ const LiquidCodeEditor = ({ value = "" }) => {
   const insertVariable = (variable) => {
     if (!editorRef.current) return;
 
-    // Focus the editor
     editorRef.current.focus();
-
-    // Restore the saved range if it exists
-    if (savedRange) {
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(savedRange);
-    }
+    selection.restoreSavedSelection();
 
     const variableText = `{{ ${variable.name} }}`;
+    const span = `<span class="highlight-liquid">${variableText}</span>`;
+    
+    const newContent = selection.insertAtCursor(span + "\u00A0", {
+      wrapWithSpaces: false
+    });
 
-    // Create a temporary container
-    const tempContainer = document.createElement("div");
+    if (newContent) {
+      setContent(newContent);
+      rawContentRef.current = newContent;
+    }
 
-    // Create the highlight span
-    const span = document.createElement("span");
-    span.className = "highlight-liquid";
-    span.textContent = variableText;
-
-    // Create a text node for the space
-    const spaceNode = document.createTextNode("\u00A0");
-
-    // Add elements to container
-    tempContainer.appendChild(span);
-    tempContainer.appendChild(spaceNode);
-
-    // Get current selection
-    const selection = window.getSelection();
-    const range = selection.getRangeAt(0);
-
-    // Insert the content
-    range.deleteContents();
-    const fragment = range.createContextualFragment(tempContainer.innerHTML);
-    range.insertNode(fragment);
-
-    // Move cursor after the space
-    range.setStartAfter(spaceNode);
-    range.setEndAfter(spaceNode);
-    selection.removeAllRanges();
-    selection.addRange(range);
-
-    // Update content state
-    const newContent = editorRef.current.innerHTML;
-    setContent(newContent);
-    rawContentRef.current = newContent;
-
-    // Clear saved range and close popover
-    setSavedRange(null);
+    selection.setSavedRange(null);
     setShowVariablePopover(false);
   };
 
@@ -744,7 +787,6 @@ const LiquidCodeEditor = ({ value = "" }) => {
     const handleClickOutside = (event) => {
       if (popoverRef.current && !popoverRef.current.contains(event.target)) {
         setShowVariablePopover(false);
-        setSavedRange(null);
       }
     };
 
@@ -822,7 +864,7 @@ const LiquidCodeEditor = ({ value = "" }) => {
 
   // Handle search input change
   const handleSearchChange = (e) => {
-    setSearchTerm(e.target.value);
+    handleSearch(e.target.value);
   };
 
   return (
