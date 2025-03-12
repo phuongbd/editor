@@ -110,6 +110,9 @@ const cleanHighlightTags = (htmlContent) => {
   // Clean all types of highlight spans and their content
   let cleaned = htmlContent;
   
+  // Clean spans with style attributes that contain liquid tags
+  cleaned = cleaned.replace(/<span[^>]*style="[^"]*"[^>]*>({{[^}]+}}|{%[^%]+%})<\/span>/g, "$1");
+  
   // Clean spans with both classes (highlight-liquid-tag and preview-hide)
   cleaned = cleaned.replace(/<span[^>]*class="[^"]*highlight-liquid-tag[^"]*preview-hide[^"]*"[^>]*>(.*?)<\/span>/g, "$1");
   
@@ -645,14 +648,36 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     }
 
     const variableText = `{{ ${variable.name} }}`;
-
+    
+    // Create a temporary container
+    const tempContainer = document.createElement('div');
+    
     // Create the highlight span
-    const span = document.createElement("span");
-    span.className = "highlight-liquid";
+    const span = document.createElement('span');
+    span.className = 'highlight-liquid';
     span.textContent = variableText;
-
-    // Insert the span and a space
-    document.execCommand("insertHTML", false, span.outerHTML + "\u00A0");
+    
+    // Create a text node for the space
+    const spaceNode = document.createTextNode('\u00A0');
+    
+    // Add elements to container
+    tempContainer.appendChild(span);
+    tempContainer.appendChild(spaceNode);
+    
+    // Get current selection
+    const selection = window.getSelection();
+    const range = selection.getRangeAt(0);
+    
+    // Insert the content
+    range.deleteContents();
+    const fragment = range.createContextualFragment(tempContainer.innerHTML);
+    range.insertNode(fragment);
+    
+    // Move cursor after the space
+    range.setStartAfter(spaceNode);
+    range.setEndAfter(spaceNode);
+    selection.removeAllRanges();
+    selection.addRange(range);
 
     // Update content state
     const newContent = editorRef.current.innerHTML;
