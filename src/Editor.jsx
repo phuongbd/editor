@@ -15,6 +15,19 @@ import {
   EyeOff,
 } from "lucide-react";
 
+// components/ToolbarButton.jsx
+const ToolbarButton = ({ icon, onClick, title }) => {
+  return (
+    <button
+      onClick={onClick}
+      className="p-1.5 mx-1 rounded hover:bg-gray-200"
+      title={title}
+    >
+      {icon}
+    </button>
+  );
+};
+
 // hooks/useEditorState.js
 const useEditorState = (initialContent) => {
   const [content, setContent] = useState(initialContent);
@@ -749,7 +762,7 @@ const LiquidCodeEditorWrapper = () => {
   {% capture email_body %}
     {% if has_pending_payment %}
       {% if buyer_action_required %}
-        You’ll get a confirmation email after completing your payment.
+        You'll get a confirmation email after completing your payment.
       {% else %}
         Your payment is being processed. You'll get an email when your order is confirmed.
       {% endif %}
@@ -757,7 +770,7 @@ const LiquidCodeEditorWrapper = () => {
       {% if requires_shipping %}
       {% case delivery_method %}
           {% when 'pick-up' %}
-            You’ll receive an email when your order is ready for pickup.
+            You'll receive an email when your order is ready for pickup.
           {% when 'local' %}
             Hi {{ customer.first_name }}, we're getting your order ready for delivery.
           {% else %}
@@ -789,7 +802,7 @@ const LiquidCodeEditorWrapper = () => {
     {% if found_gift_card_with_recipient_email %}
       <p>Your gift card recipient will receive an email with their gift card code.</p>
     {% elsif gift_card_line_items.first %}
-      <p>You’ll receive separate emails for any gift cards.</p>
+      <p>You'll receive separate emails for any gift cards.</p>
     {% endif %}
   {% endcapture %}`;
   

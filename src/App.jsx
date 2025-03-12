@@ -1,9 +1,9 @@
 import "./App.css";
-import LiquidCodeEditor from "./Editor";
+import LiquidCodeEditorWrapper from "./Editor";
 
 function App() {
   
-  return <LiquidCodeEditor  />;
+  return <LiquidCodeEditorWrapper  />;
 }
 
 export default App;
