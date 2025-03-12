@@ -15,73 +15,217 @@ import {
   EyeOff,
 } from "lucide-react";
 
-const LiquidCodeEditor = ({ variables = [] }) => {
-  const [content, setContent] = useState(`{% capture email_title %}
-  {% if has_pending_payment %}
-    Thank you for your order!
-  {% else %}
-    Thank you for your purchase!
-  {% endif %}
-{% endcapture %}
-{% capture email_body %}
-  {% if has_pending_payment %}
-    {% if buyer_action_required %}
-      You’ll get a confirmation email after completing your payment.
-    {% else %}
-      Your payment is being processed. You'll get an email when your order is confirmed.
-    {% endif %}
-  {% else %}
-    {% if requires_shipping %}
-    {% case delivery_method %}
-        {% when 'pick-up' %}
-          You’ll receive an email when your order is ready for pickup.
-        {% when 'local' %}
-          Hi {{ customer.first_name }}, we're getting your order ready for delivery.
-        {% else %}
-          We're getting your order ready to be shipped. We will notify you when it has been sent.
-      {% endcase %}
-        {% if delivery_instructions != blank  %}
-          <p><b>Delivery information:</b> {{ delivery_instructions }}</p>
-        {% endif %}
-       {% if consolidated_estimated_delivery_time %}
-        {% if has_multiple_delivery_methods %}
-          <h3 class="estimated_delivery__title">Estimated delivery</h3>
-          <p>{{ consolidated_estimated_delivery_time }}</p>
-        {% else %}
-          <p>
-            Estimated delivery <b>{{ consolidated_estimated_delivery_time }}</b>
-          </p>
-        {% endif %}
-       {% endif %}
-    {% endif %}
-  {% endif %}
-  {% assign gift_card_line_items = line_items | where: "gift_card" %}
-  {% assign found_gift_card_with_recipient_email = false %}
-  {% for line_item in gift_card_line_items %}
-    {% if line_item.properties["__shopify_send_gift_card_to_recipient"] and line_item.properties["Recipient email"] %}
-      {% assign found_gift_card_with_recipient_email = true %}
-      {% break %}
-    {% endif %}
-  {% endfor %}
-  {% if found_gift_card_with_recipient_email %}
-    <p>Your gift card recipient will receive an email with their gift card code.</p>
-  {% elsif gift_card_line_items.first %}
-    <p>You’ll receive separate emails for any gift cards.</p>
-  {% endif %}
-{% endcapture %}`);
+// hooks/useEditorState.js
+const useEditorState = (initialContent) => {
+  const [content, setContent] = useState(initialContent);
   const [previewMode, setPreviewMode] = useState(false);
+  const rawContentRef = useRef(content);
+  const editorRef = useRef(null);
+  const wasInWysiwygMode = useRef(false);
+  const initialRender = useRef(true);
+
+  return {
+    content,
+    setContent,
+    previewMode,
+    setPreviewMode,
+    rawContentRef,
+    editorRef,
+    wasInWysiwygMode,
+    initialRender
+  };
+};
+
+// hooks/useVariablePopover.js
+const useVariablePopover = (variables) => {
   const [showVariablePopover, setShowVariablePopover] = useState(false);
   const [popoverPosition, setPopoverPosition] = useState({ x: 0, y: 0 });
   const [filteredVariables, setFilteredVariables] = useState(variables);
   const [searchTerm, setSearchTerm] = useState("");
+  const [savedRange, setSavedRange] = useState(null);
   const popoverRef = useRef(null);
 
-  // Refs for managing cursor position
-  const editorRef = useRef(null);
-  const wasInWysiwygMode = useRef(false);
-  const initialRender = useRef(true);
-  const rawContentRef = useRef(content); // Store original content without highlights
-  const [savedRange, setSavedRange] = useState(null);
+  const handleSearch = (term) => {
+    setSearchTerm(term);
+    if (term) {
+      const filtered = variables.filter(
+        (variable) =>
+          variable.name.toLowerCase().includes(term.toLowerCase()) ||
+          (variable.description || "").toLowerCase().includes(term.toLowerCase())
+      );
+      setFilteredVariables(filtered);
+    } else {
+      setFilteredVariables(variables);
+    }
+  };
+
+  useEffect(() => {
+    setFilteredVariables(variables);
+  }, [variables]);
+
+  return {
+    showVariablePopover,
+    setShowVariablePopover,
+    popoverPosition,
+    setPopoverPosition,
+    filteredVariables,
+    searchTerm,
+    handleSearch,
+    savedRange,
+    setSavedRange,
+    popoverRef
+  };
+};
+
+// utils/contentProcessing.js
+const processContent = (rawContent) => {
+  let processedContent = rawContent;
+  processedContent = processedContent.replace(/{%.*?%}/g, "");
+  const parts = processedContent.split(/({{[^}]+}})/g);
+  return parts
+    .map((part) => {
+      if (part.startsWith("{{") && part.endsWith("}}")) {
+        return `<span class="highlight-liquid">${part}</span>`;
+      }
+      return part;
+    })
+    .join("");
+};
+
+const cleanHighlightTags = (htmlContent) => {
+  return htmlContent.replace(
+    /<span class="highlight-liquid">(.*?)<\/span>/g,
+    "$1"
+  );
+};
+
+// components/Toolbar.jsx
+const Toolbar = ({ onToolbarAction, previewMode, onTogglePreview }) => {
+  return (
+    <div className="flex flex-wrap items-center p-2 border-b bg-gray-50">
+      <ToolbarButton icon={<Bold size={18} />} onClick={() => onToolbarAction("bold")} title="Bold" />
+      <ToolbarButton icon={<Italic size={18} />} onClick={() => onToolbarAction("italic")} title="Italic" />
+      <ToolbarButton icon={<Code size={18} />} onClick={() => onToolbarAction("code")} title="Code" />
+      <span className="mx-2 h-6 border-l border-gray-300"></span>
+
+      <ToolbarButton icon={<Heading1 size={18} />} onClick={() => onToolbarAction("h1")} title="Heading 1" />
+      <ToolbarButton icon={<Heading2 size={18} />} onClick={() => onToolbarAction("h2")} title="Heading 2" />
+      <ToolbarButton icon={<Heading3 size={18} />} onClick={() => onToolbarAction("h3")} title="Heading 3" />
+      <span className="mx-2 h-6 border-l border-gray-300"></span>
+
+      <ToolbarButton icon={<List size={18} />} onClick={() => onToolbarAction("ul")} title="Unordered List" />
+      <ToolbarButton icon={<ListOrdered size={18} />} onClick={() => onToolbarAction("ol")} title="Ordered List" />
+      <span className="mx-2 h-6 border-l border-gray-300"></span>
+
+      <ToolbarButton icon={<AlignLeft size={18} />} onClick={() => onToolbarAction("align-left")} title="Align Left" />
+      <ToolbarButton icon={<AlignCenter size={18} />} onClick={() => onToolbarAction("align-center")} title="Align Center" />
+      <ToolbarButton icon={<AlignRight size={18} />} onClick={() => onToolbarAction("align-right")} title="Align Right" />
+
+      <button
+        onClick={onTogglePreview}
+        className={`p-1.5 mx-1 rounded hover:bg-gray-200 ${previewMode ? "bg-blue-100" : ""}`}
+        title="Toggle Edit/Preview"
+      >
+        {previewMode ? <EyeOff size={18} /> : <Eye size={18} />}
+      </button>
+    </div>
+  );
+};
+
+// components/VariablePopover.jsx
+const VariablePopover = ({
+  show,
+  position,
+  searchTerm,
+  onSearchChange,
+  filteredVariables,
+  onVariableSelect,
+  popoverRef
+}) => {
+  if (!show) return null;
+
+  return (
+    <div
+      ref={popoverRef}
+      className="absolute bg-white border rounded-lg shadow-lg p-2 z-50 max-h-60 w-64"
+      style={{
+        left: `${position.x}px`,
+        top: `${position.y}px`,
+        transform: "translateY(-100%)",
+      }}
+    >
+      <div className="sticky top-0 bg-white p-2 border-b">
+        <input
+          type="text"
+          placeholder="Search variables..."
+          className="w-full px-2 py-1 border border-gray-300 text-black rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+          value={searchTerm}
+          onChange={onSearchChange}
+        />
+      </div>
+      <div className="overflow-y-auto max-h-48">
+        {filteredVariables.length > 0 ? (
+          filteredVariables.map((variable, index) => (
+            <div
+              key={index}
+              className="p-2 hover:bg-blue-50 cursor-pointer flex flex-col"
+              onClick={() => onVariableSelect(variable)}
+            >
+              <span className="font-medium text-blue-600">{variable.name}</span>
+            </div>
+          ))
+        ) : (
+          <div className="p-2 text-gray-500 text-center">No variables found</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Main component
+const LiquidCodeEditor = ({ variables = [], value = "" }) => {
+  const [filteredVariables, setFilteredVariables] = useState(variables);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const {
+    content,
+    setContent,
+    previewMode,
+    setPreviewMode,
+    rawContentRef,
+    editorRef,
+    wasInWysiwygMode,
+    initialRender
+  } = useEditorState(value);
+
+  const {
+    showVariablePopover,
+    setShowVariablePopover,
+    popoverPosition,
+    setPopoverPosition,
+    savedRange,
+    setSavedRange,
+    popoverRef
+  } = useVariablePopover(variables);
+
+  // Update filtered variables when search term changes
+  useEffect(() => {
+    if (searchTerm) {
+      const filtered = variables.filter(
+        (variable) =>
+          variable.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (variable.description || "").toLowerCase().includes(searchTerm.toLowerCase())
+      );
+      setFilteredVariables(filtered);
+    } else {
+      setFilteredVariables(variables);
+    }
+  }, [searchTerm, variables]);
+
+  // Update filtered variables when variables prop changes
+  useEffect(() => {
+    setFilteredVariables(variables);
+  }, [variables]);
 
   // Handle key press for variable suggestions and deletion
   const handleKeyDown = (e) => {
@@ -183,38 +327,6 @@ const LiquidCodeEditor = ({ variables = [] }) => {
     if (e.key === "Escape") {
       setShowVariablePopover(false);
     }
-  };
-
-  // Function to process the content for display
-  const processContent = () => {
-    let processedContent = rawContentRef.current;
-
-    // Hide {% %} tags if option is enabled
-    processedContent = processedContent.replace(/{%.*?%}/g, "");
-
-    // Split content into parts and process each part
-    const parts = processedContent.split(/({{[^}]+}})/g);
-
-    // Process each part and wrap Liquid tags with highlight
-    processedContent = parts
-      .map((part) => {
-        if (part.startsWith("{{") && part.endsWith("}}")) {
-          return `<span class="highlight-liquid">${part}</span>`;
-        }
-        return part;
-      })
-      .join("");
-
-    return processedContent;
-  };
-
-  // Function to clean highlight tags from content
-  const cleanHighlightTags = (htmlContent) => {
-    // Remove highlight spans but keep their content
-    return htmlContent.replace(
-      /<span class="highlight-liquid">(.*?)<\/span>/g,
-      "$1"
-    );
   };
 
   // Handle toolbar actions
@@ -453,7 +565,7 @@ const LiquidCodeEditor = ({ variables = [] }) => {
           }
 
           // Update content
-          editor.innerHTML = processContent();
+          editor.innerHTML = processContent(rawContentRef.current);
 
           // Restore selection/cursor position if possible
           if (savedSelection) {
@@ -492,25 +604,6 @@ const LiquidCodeEditor = ({ variables = [] }) => {
     initialRender.current = false;
   }, [previewMode]);
 
-  // Update filteredVariables when variables prop changes
-  useEffect(() => {
-    setFilteredVariables(variables);
-  }, [variables]);
-
-  // Filter variables based on search term
-  useEffect(() => {
-    if (searchTerm) {
-      const filtered = variables.filter(
-        (variable) =>
-          variable.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          variable.description.toLowerCase().includes(searchTerm.toLowerCase())
-      );
-      setFilteredVariables(filtered);
-    } else {
-      setFilteredVariables(variables);
-    }
-  }, [searchTerm, variables]);
-
   // Handle search input change
   const handleSearchChange = (e) => {
     setSearchTerm(e.target.value);
@@ -518,107 +611,14 @@ const LiquidCodeEditor = ({ variables = [] }) => {
 
   return (
     <div className="w-full max-w-4xl mx-auto border rounded-lg shadow-lg bg-white">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center p-2 border-b bg-gray-50">
-        <button
-          onClick={() => handleToolbarAction("bold")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Bold"
-        >
-          <Bold size={18} />
-        </button>
-        <button
-          onClick={() => handleToolbarAction("italic")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Italic"
-        >
-          <Italic size={18} />
-        </button>
-        <button
-          onClick={() => handleToolbarAction("code")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Code"
-        >
-          <Code size={18} />
-        </button>
-        <span className="mx-2 h-6 border-l border-gray-300"></span>
+      <Toolbar
+        onToolbarAction={handleToolbarAction}
+        previewMode={previewMode}
+        onTogglePreview={togglePreviewMode}
+      />
 
-        <button
-          onClick={() => handleToolbarAction("h1")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Heading 1"
-        >
-          <Heading1 size={18} />
-        </button>
-        <button
-          onClick={() => handleToolbarAction("h2")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Heading 2"
-        >
-          <Heading2 size={18} />
-        </button>
-        <button
-          onClick={() => handleToolbarAction("h3")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Heading 3"
-        >
-          <Heading3 size={18} />
-        </button>
-        <span className="mx-2 h-6 border-l border-gray-300"></span>
-
-        <button
-          onClick={() => handleToolbarAction("ul")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Unordered List"
-        >
-          <List size={18} />
-        </button>
-        <button
-          onClick={() => handleToolbarAction("ol")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Ordered List"
-        >
-          <ListOrdered size={18} />
-        </button>
-        <span className="mx-2 h-6 border-l border-gray-300"></span>
-
-        <button
-          onClick={() => handleToolbarAction("align-left")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Align Left"
-        >
-          <AlignLeft size={18} />
-        </button>
-        <button
-          onClick={() => handleToolbarAction("align-center")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Align Center"
-        >
-          <AlignCenter size={18} />
-        </button>
-        <button
-          onClick={() => handleToolbarAction("align-right")}
-          className="p-1.5 mx-1 rounded hover:bg-gray-200"
-          title="Align Right"
-        >
-          <AlignRight size={18} />
-        </button>
-
-        <button
-          onClick={togglePreviewMode}
-          className={`p-1.5 mx-1 rounded hover:bg-gray-200 ${
-            previewMode ? "bg-blue-100" : ""
-          }`}
-          title="Toggle Edit/Preview"
-        >
-          {previewMode ? <EyeOff size={18} /> : <Eye size={18} />}
-        </button>
-      </div>
-
-      {/* Editor/Preview Area */}
       <div className="p-4 relative">
         {previewMode ? (
-          // WYSIWYG HTML editor
           <>
             <div
               id="wysiwyg-editor"
@@ -629,57 +629,20 @@ const LiquidCodeEditor = ({ variables = [] }) => {
               onKeyDown={handleKeyDown}
               suppressContentEditableWarning={true}
               dangerouslySetInnerHTML={
-                initialRender.current ? { __html: processContent() } : undefined
+                initialRender.current ? { __html: processContent(rawContentRef.current) } : undefined
               }
-            ></div>
-
-            {/* Variables Popover */}
-            {showVariablePopover && (
-              <div
-                ref={popoverRef}
-                className="absolute bg-white border rounded-lg shadow-lg p-2 z-50 max-h-60 w-64"
-                style={{
-                  left: `${popoverPosition.x}px`,
-                  top: `${popoverPosition.y}px`,
-                  transform: "translateY(-100%)", // Move entire popover above the position
-                }}
-              >
-                {/* Search input */}
-                <div className="sticky top-0 bg-white p-2 border-b">
-                  <input
-                    type="text"
-                    placeholder="Search variables..."
-                    className="w-full px-2 py-1 border border-gray-300 text-black rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                    value={searchTerm}
-                    onChange={handleSearchChange}
-                  />
-                </div>
-
-                {/* Variables list */}
-                <div className="overflow-y-auto max-h-48">
-                  {filteredVariables.length > 0 ? (
-                    filteredVariables.map((variable, index) => (
-                      <div
-                        key={index}
-                        className="p-2 hover:bg-blue-50 cursor-pointer flex flex-col"
-                        onClick={() => insertVariable(variable)}
-                      >
-                        <span className="font-medium text-blue-600">
-                          {variable.name}
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-2 text-gray-500 text-center">
-                      No variables found
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            />
+            <VariablePopover
+              show={showVariablePopover}
+              position={popoverPosition}
+              searchTerm={searchTerm}
+              onSearchChange={handleSearchChange}
+              filteredVariables={filteredVariables}
+              onVariableSelect={insertVariable}
+              popoverRef={popoverRef}
+            />
           </>
         ) : (
-          // Code editor mode
           <textarea
             id="editor-textarea"
             className="w-full min-h-64 p-4 font-mono text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-300 text-black"
@@ -692,77 +655,149 @@ const LiquidCodeEditor = ({ variables = [] }) => {
         )}
       </div>
 
-      {/* Status bar */}
       <div className="flex justify-end items-center px-4 py-2 border-t bg-gray-50 text-xs text-gray-500">
         <div>{content.length} characters</div>
       </div>
 
-      <style>{`
-          .highlight-liquid {
-            background-color: #dbeafe;
-            padding: 1px 2px;
-            border-radius: 3px;
-            color: #1e40af;
-            font-weight: bold;
-            font-size: 14px;
-          }
-          
-          .preview-content {
-            min-height: 16rem;
-          }
-          
-          .preview-content h1 {
-            font-size: 2em;
-            font-weight: bold;
-            margin-top: 0.67em;
-            margin-bottom: 0.67em;
-          }
-          .preview-content h2 {
-            font-size: 1.5em;
-            font-weight: bold;
-            margin-top: 0.83em;
-            margin-bottom: 0.83em;
-          }
-          .preview-content h3 {
-            font-size: 1.17em;
-            font-weight: bold;
-            margin-top: 1em;
-            margin-bottom: 1em;
-          }
-          .preview-content p {
-            margin-top: 1em;
-            margin-bottom: 1em;
-          }
-          .preview-content strong, .preview-content b {
-            font-weight: bold;
-          }
-          .preview-content em, .preview-content i {
-            font-style: italic;
-          }
-          .preview-content code {
-            font-family: monospace;
-            background-color: #f3f4f6;
-            padding: 0.125em 0.25em;
-            border-radius: 0.25em;
-          }
-          .preview-content ul, .preview-content ol {
-            padding-left: 2em;
-            margin-top: 1em;
-            margin-bottom: 1em;
-          }
-          .preview-content ul {
-            list-style-type: disc;
-          }
-          .preview-content ol {
-            list-style-type: decimal;
-          }
-          .preview-content a {
-            color: #2563eb;
-            text-decoration: underline;
-          }
-        `}</style>
+      <EditorStyles />
     </div>
   );
 };
 
-export default LiquidCodeEditor;
+// components/EditorStyles.jsx
+const EditorStyles = () => (
+  <style>{`
+    .highlight-liquid {
+      background-color: #dbeafe;
+      padding: 1px 2px;
+      border-radius: 3px;
+      color: #1e40af;
+      font-weight: bold;
+      font-size: 14px;
+    }
+    
+    .preview-content {
+      min-height: 16rem;
+    }
+    
+    .preview-content h1 {
+      font-size: 2em;
+      font-weight: bold;
+      margin-top: 0.67em;
+      margin-bottom: 0.67em;
+    }
+    .preview-content h2 {
+      font-size: 1.5em;
+      font-weight: bold;
+      margin-top: 0.83em;
+      margin-bottom: 0.83em;
+    }
+    .preview-content h3 {
+      font-size: 1.17em;
+      font-weight: bold;
+      margin-top: 1em;
+      margin-bottom: 1em;
+    }
+    .preview-content p {
+      margin-top: 1em;
+      margin-bottom: 1em;
+    }
+    .preview-content strong, .preview-content b {
+      font-weight: bold;
+    }
+    .preview-content em, .preview-content i {
+      font-style: italic;
+    }
+    .preview-content code {
+      font-family: monospace;
+      background-color: #f3f4f6;
+      padding: 0.125em 0.25em;
+      border-radius: 0.25em;
+    }
+    .preview-content ul, .preview-content ol {
+      padding-left: 2em;
+      margin-top: 1em;
+      margin-bottom: 1em;
+    }
+    .preview-content ul {
+      list-style-type: disc;
+    }
+    .preview-content ol {
+      list-style-type: decimal;
+    }
+    .preview-content a {
+      color: #2563eb;
+      text-decoration: underline;
+    }
+  `}</style>
+);
+
+const LiquidCodeEditorWrapper = () => {
+  const variables = [
+    { name: 'product.title', description: 'The title of the product' },
+    { name: 'product.description', description: 'The description of the product' },
+    { name: 'product.price', description: 'The price of the product' },
+    { name: 'product.available', description: 'Whether the product is available' },
+  ];
+  const value = `{% capture email_title %}
+    {% if has_pending_payment %}
+      Thank you for your order!
+    {% else %}
+      Thank you for your purchase!
+    {% endif %}
+  {% endcapture %}
+  {% capture email_body %}
+    {% if has_pending_payment %}
+      {% if buyer_action_required %}
+        You’ll get a confirmation email after completing your payment.
+      {% else %}
+        Your payment is being processed. You'll get an email when your order is confirmed.
+      {% endif %}
+    {% else %}
+      {% if requires_shipping %}
+      {% case delivery_method %}
+          {% when 'pick-up' %}
+            You’ll receive an email when your order is ready for pickup.
+          {% when 'local' %}
+            Hi {{ customer.first_name }}, we're getting your order ready for delivery.
+          {% else %}
+            We're getting your order ready to be shipped. We will notify you when it has been sent.
+        {% endcase %}
+          {% if delivery_instructions != blank  %}
+            <p><b>Delivery information:</b> {{ delivery_instructions }}</p>
+          {% endif %}
+         {% if consolidated_estimated_delivery_time %}
+          {% if has_multiple_delivery_methods %}
+            <h3 class="estimated_delivery__title">Estimated delivery</h3>
+            <p>{{ consolidated_estimated_delivery_time }}</p>
+          {% else %}
+            <p>
+              Estimated delivery <b>{{ consolidated_estimated_delivery_time }}</b>
+            </p>
+          {% endif %}
+         {% endif %}
+      {% endif %}
+    {% endif %}
+    {% assign gift_card_line_items = line_items | where: "gift_card" %}
+    {% assign found_gift_card_with_recipient_email = false %}
+    {% for line_item in gift_card_line_items %}
+      {% if line_item.properties["__shopify_send_gift_card_to_recipient"] and line_item.properties["Recipient email"] %}
+        {% assign found_gift_card_with_recipient_email = true %}
+        {% break %}
+      {% endif %}
+    {% endfor %}
+    {% if found_gift_card_with_recipient_email %}
+      <p>Your gift card recipient will receive an email with their gift card code.</p>
+    {% elsif gift_card_line_items.first %}
+      <p>You’ll receive separate emails for any gift cards.</p>
+    {% endif %}
+  {% endcapture %}`;
+  
+  return (
+    <div>
+      <LiquidCodeEditor variables={variables} value={value} />
+    </div>
+  );
+};
+
+export default LiquidCodeEditorWrapper;
