@@ -13,19 +13,6 @@ import {
   HideIcon,
 } from "@shopify/polaris-icons";
 
-// components/ToolbarButton.jsx
-const ToolbarButton = ({ icon, onClick, title }) => {
-  return (
-    <button
-      onClick={onClick}
-      className="p-1.5 mx-1 rounded hover:bg-gray-200"
-      title={title}
-    >
-      {icon}
-    </button>
-  );
-};
-
 // hooks/useEditorState.js
 const useEditorState = (initialContent) => {
   const [content, setContent] = useState(initialContent);
@@ -424,7 +411,7 @@ const VariablePopover = ({
 };
 
 // Main component
-const LiquidCodeEditor = ({ value = "" }) => {
+const LiquidCodeEditor = ({ value = "", onChange }) => {
   const {
     content,
     setContent,
@@ -756,6 +743,7 @@ const LiquidCodeEditor = ({ value = "" }) => {
 
     // Update content state
     setContent(currentContent);
+    handleChange(currentContent);
     rawContentRef.current = newContent;
   };
 
@@ -867,6 +855,18 @@ const LiquidCodeEditor = ({ value = "" }) => {
     handleSearch(e.target.value);
   };
 
+  const getOutputContent = (text) => {
+    if (!previewMode) {
+      return text;
+    }
+    return cleanContent(text);
+  };
+
+  const handleChange = (text) => {
+    const outputContent = getOutputContent(text);
+    onChange(outputContent);
+  };
+
   return (
     <div className="flex flex-col w-[1000px] border rounded-lg shadow-lg bg-white">
       <Toolbar
@@ -910,6 +910,7 @@ const LiquidCodeEditor = ({ value = "" }) => {
             onChange={(e) => {
               setContent(e.target.value);
               rawContentRef.current = e.target.value;
+              handleChange(e.target.value);
             }}
           />
         )}
@@ -1073,7 +1074,7 @@ const LiquidCodeEditorWrapper = () => {
     {% endif %}
   {% endcapture %}`;
 
-  return <LiquidCodeEditor value={value} />;
+  return <LiquidCodeEditor value={value} onChange={(newContent) => console.log(newContent)} />;
 };
 
 export default LiquidCodeEditorWrapper;
