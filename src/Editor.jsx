@@ -867,6 +867,23 @@ const LiquidCodeEditor = ({ value = "", onChange }) => {
     onChange(outputContent);
   };
 
+  // Add event handler for preventing edits inside highlight spans
+  const handleBeforeInput = (e) => {
+    const selection = window.getSelection();
+    if (!selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const container = range.startContainer;
+    const parentNode = container.parentNode;
+
+    // If we're inside a highlight-liquid span, prevent the input
+    if (parentNode.classList?.contains("highlight-liquid") || 
+        container.classList?.contains("highlight-liquid")) {
+      e.preventDefault();
+      return false;
+    }
+  };
+
   return (
     <div className="flex flex-col w-[1000px] border rounded-lg shadow-lg bg-white">
       <Toolbar
@@ -885,6 +902,7 @@ const LiquidCodeEditor = ({ value = "", onChange }) => {
               contentEditable={true}
               onInput={handleWysiwygChange}
               onKeyDown={handleKeyDown}
+              onBeforeInput={handleBeforeInput}
               suppressContentEditableWarning={true}
               dangerouslySetInnerHTML={
                 initialRender.current
@@ -935,6 +953,13 @@ const EditorStyles = () => (
       color: #1e40af;
       font-weight: bold;
       font-size: 14px;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-modify: read-only;
+      -moz-user-modify: read-only;
+      -ms-user-modify: read-only;
+      user-modify: read-only;
+      cursor: default;
     }
 
     .highlight-liquid-tag {
