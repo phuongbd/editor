@@ -92,13 +92,14 @@ const useVariablePopover = (variables) => {
 
 // utils/contentProcessing.js
 const processContent = (rawContent) => {
-  let processedContent = rawContent;
-  processedContent = processedContent.replace(/{%.*?%}/g, "");
-  const parts = processedContent.split(/({{[^}]+}})/g);
+  const parts = rawContent.split(/({{[^}]+}}|{%[^%]+%})/g);
   return parts
     .map((part) => {
       if (part.startsWith("{{") && part.endsWith("}}")) {
         return `<span class="highlight-liquid">${part}</span>`;
+      }
+      if (part.startsWith("{%") && part.endsWith("%}")) {
+        return `<span class="highlight-liquid-tag preview-hide">${part}</span>`;
       }
       return part;
     })
@@ -106,10 +107,19 @@ const processContent = (rawContent) => {
 };
 
 const cleanHighlightTags = (htmlContent) => {
-  return htmlContent.replace(
-    /<span class="highlight-liquid">(.*?)<\/span>/g,
-    "$1"
-  );
+  // Clean all types of highlight spans and their content
+  let cleaned = htmlContent;
+  
+  // Clean spans with both classes (highlight-liquid-tag and preview-hide)
+  cleaned = cleaned.replace(/<span[^>]*class="[^"]*highlight-liquid-tag[^"]*preview-hide[^"]*"[^>]*>(.*?)<\/span>/g, "$1");
+  
+  // Clean highlight-liquid spans
+  cleaned = cleaned.replace(/<span[^>]*class="[^"]*highlight-liquid[^"]*"[^>]*>(.*?)<\/span>/g, "$1");
+  
+  // Clean any remaining highlight-liquid-tag spans
+  cleaned = cleaned.replace(/<span[^>]*class="[^"]*highlight-liquid-tag[^"]*"[^>]*>(.*?)<\/span>/g, "$1");
+  
+  return cleaned;
 };
 
 // components/Toolbar.jsx
@@ -483,23 +493,42 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     // Remove empty/unnecessary spans
     cleaned = cleaned.replace(/<span[^>]*>\s*<\/span>/g, "");
 
-    // Remove multiple spaces
-    cleaned = cleaned.replace(/\s+/g, " ");
+    // Remove multiple spaces while preserving newlines
+    cleaned = cleaned.replace(/[^\S\n]+/g, " ");
 
-    // Remove spaces before/after HTML tags
+    // Remove spaces before/after HTML tags while preserving newlines
     cleaned = cleaned.replace(/\s*(<[^>]+>)\s*/g, "$1");
 
     // Remove unnecessary &nbsp;
     cleaned = cleaned.replace(/&nbsp;/g, " ");
 
+    // Clean up multiple newlines
+    cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
+
     return cleaned;
   };
 
   const togglePreviewMode = () => {
-    // Also clean content when switching preview mode
-    const cleanedContent = cleanContent(content);
-    setContent(cleanedContent);
-    rawContentRef.current = cleanedContent;
+    if (previewMode) {
+      // Switching to code mode
+      let cleanedContent;
+      if (editorRef.current) {
+        // Clean from editor's innerHTML if available
+        cleanedContent = cleanHighlightTags(editorRef.current.innerHTML);
+      } else {
+        // Fallback to rawContentRef if editor not available
+        cleanedContent = cleanHighlightTags(rawContentRef.current);
+      }
+      // Clean other HTML formatting
+      cleanedContent = cleanContent(cleanedContent);
+      setContent(cleanedContent);
+      rawContentRef.current = cleanedContent;
+    } else {
+      // Switching to preview mode
+      const cleanedContent = cleanContent(content);
+      setContent(cleanedContent);
+      rawContentRef.current = cleanedContent;
+    }
     setPreviewMode(!previewMode);
   };
 
@@ -552,9 +581,52 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
       }
     }
 
+    // Get all liquid control flow tags from rawContentRef
+    const liquidTags = rawContentRef.current.match(/{%[^%]+%}/g) || [];
+    
+    // Get current content without liquid tags
+    const currentContent = editorRef.current.innerHTML;
+    
+    // Create a map of text positions to liquid tags
+    const tagPositions = new Map();
+    let lastIndex = 0;
+    let plainText = currentContent.replace(/<[^>]+>/g, ''); // Remove HTML tags
+    
+    liquidTags.forEach(tag => {
+      // Find appropriate position for the tag
+      const beforeTag = tag.match(/{%\s*(if|unless|case|for|capture)/);
+      const afterTag = tag.match(/{%\s*(endif|endunless|endcase|endfor|endcapture)/);
+      
+      if (beforeTag) {
+        // For opening tags, insert at the next line break or current position
+        const nextBreak = plainText.indexOf('\n', lastIndex);
+        const position = nextBreak > -1 ? nextBreak : lastIndex;
+        tagPositions.set(position, tag);
+        lastIndex = position + 1;
+      } else if (afterTag) {
+        // For closing tags, insert at the previous line break or current position
+        const prevBreak = plainText.lastIndexOf('\n', lastIndex);
+        const position = prevBreak > -1 ? prevBreak : lastIndex;
+        tagPositions.set(position, tag);
+        lastIndex = position + 1;
+      }
+    });
+
+    // Update rawContentRef with the current content and preserved liquid tags
+    let newContent = '';
+    let currentPos = 0;
+    
+    Array.from(tagPositions.entries())
+      .sort(([a], [b]) => a - b)
+      .forEach(([position, tag]) => {
+        newContent += currentContent.slice(currentPos, position) + tag;
+        currentPos = position;
+      });
+    
+    newContent += currentContent.slice(currentPos);
+    
     // Update content state
-    const newContent = editorRef.current.innerHTML;
-    setContent(newContent);
+    setContent(currentContent);
     rawContentRef.current = newContent;
   };
 
@@ -679,7 +751,7 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
   };
 
   return (
-    <div className="flex flex-col w-full border rounded-lg shadow-lg bg-white">
+    <div className="flex flex-col w-[1000px] border rounded-lg shadow-lg bg-white">
       <Toolbar
         onToolbarAction={handleToolbarAction}
         previewMode={previewMode}
@@ -745,6 +817,19 @@ const EditorStyles = () => (
       color: #1e40af;
       font-weight: bold;
       font-size: 14px;
+    }
+
+    .highlight-liquid-tag {
+      background-color: #f3f4f6;
+      padding: 1px 2px;
+      border-radius: 3px;
+      color: #374151;
+      font-family: monospace;
+      font-size: 14px;
+    }
+
+    .preview-hide {
+      display: none;
     }
     
     .preview-content, #editor-textarea {
