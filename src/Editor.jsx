@@ -1,10 +1,10 @@
-import React, { useState, useRef, useEffect } from "react";
-import { ButtonGroup, Button, Icon, Divider } from "@shopify/polaris";
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { Button, Icon } from "@shopify/polaris";
 import {
   TextBoldIcon,
   TextItalicIcon,
   CodeIcon,
-  TextFontIcon,
+  ListNumberedIcon,
   ListBulletedIcon,
   TextAlignLeftIcon,
   TextAlignCenterIcon,
@@ -35,6 +35,28 @@ const useEditorState = (initialContent) => {
   const wasInWysiwygMode = useRef(false);
   const initialRender = useRef(true);
 
+  // Extract Liquid variables from content
+  const extractLiquidVariables = (text) => {
+    const liquidVarRegex = /{{([^}]+)}}/g;
+    const matches = text.match(liquidVarRegex) || [];
+    const uniqueVars = new Set();
+
+    matches.forEach((match) => {
+      // Clean up the variable name by removing {{ }} and trimming whitespace
+      const varName = match.replace(/[{}]/g, "").trim();
+      uniqueVars.add(varName);
+    });
+
+    return Array.from(uniqueVars).map((name) => ({
+      name,
+      description: `Liquid variable: ${name}`,
+    }));
+  };
+
+  const variables = useMemo(() => {
+    return extractLiquidVariables(initialContent);
+  }, [initialContent]);
+
   return {
     content,
     setContent,
@@ -44,6 +66,7 @@ const useEditorState = (initialContent) => {
     editorRef,
     wasInWysiwygMode,
     initialRender,
+    variables,
   };
 };
 
@@ -109,19 +132,31 @@ const processContent = (rawContent) => {
 const cleanHighlightTags = (htmlContent) => {
   // Clean all types of highlight spans and their content
   let cleaned = htmlContent;
-  
+
   // Clean spans with style attributes that contain liquid tags
-  cleaned = cleaned.replace(/<span[^>]*style="[^"]*"[^>]*>({{[^}]+}}|{%[^%]+%})<\/span>/g, "$1");
-  
+  cleaned = cleaned.replace(
+    /<span[^>]*style="[^"]*"[^>]*>({{[^}]+}}|{%[^%]+%})<\/span>/g,
+    "$1"
+  );
+
   // Clean spans with both classes (highlight-liquid-tag and preview-hide)
-  cleaned = cleaned.replace(/<span[^>]*class="[^"]*highlight-liquid-tag[^"]*preview-hide[^"]*"[^>]*>(.*?)<\/span>/g, "$1");
-  
+  cleaned = cleaned.replace(
+    /<span[^>]*class="[^"]*highlight-liquid-tag[^"]*preview-hide[^"]*"[^>]*>(.*?)<\/span>/g,
+    "$1"
+  );
+
   // Clean highlight-liquid spans
-  cleaned = cleaned.replace(/<span[^>]*class="[^"]*highlight-liquid[^"]*"[^>]*>(.*?)<\/span>/g, "$1");
-  
+  cleaned = cleaned.replace(
+    /<span[^>]*class="[^"]*highlight-liquid[^"]*"[^>]*>(.*?)<\/span>/g,
+    "$1"
+  );
+
   // Clean any remaining highlight-liquid-tag spans
-  cleaned = cleaned.replace(/<span[^>]*class="[^"]*highlight-liquid-tag[^"]*"[^>]*>(.*?)<\/span>/g, "$1");
-  
+  cleaned = cleaned.replace(
+    /<span[^>]*class="[^"]*highlight-liquid-tag[^"]*"[^>]*>(.*?)<\/span>/g,
+    "$1"
+  );
+
   return cleaned;
 };
 
@@ -149,23 +184,33 @@ const Toolbar = ({ onToolbarAction, previewMode, onTogglePreview }) => {
       />
 
       <Button
-        icon={<Icon source={TextFontIcon} />}
         onClick={() => onToolbarAction("h1")}
         tooltip="Heading 1"
         size="slim"
-      />
+      >
+        H1
+      </Button>
       <Button
-        icon={<Icon source={TextFontIcon} />}
         onClick={() => onToolbarAction("h2")}
         tooltip="Heading 2"
         size="slim"
-      />
+      >
+        H2
+      </Button>
       <Button
-        icon={<Icon source={TextFontIcon} />}
         onClick={() => onToolbarAction("h3")}
         tooltip="Heading 3"
         size="slim"
-      />
+      >
+        H3
+      </Button>
+      <Button
+        onClick={() => onToolbarAction("p")}
+        tooltip="Paragraph"
+        size="slim"
+      >
+        P
+      </Button>
 
       <Button
         icon={<Icon source={ListBulletedIcon} />}
@@ -174,7 +219,7 @@ const Toolbar = ({ onToolbarAction, previewMode, onTogglePreview }) => {
         size="slim"
       />
       <Button
-        icon={<Icon source={ListBulletedIcon} />}
+        icon={<Icon source={ListNumberedIcon} />}
         onClick={() => onToolbarAction("ol")}
         tooltip="Ordered List"
         size="slim"
@@ -263,10 +308,7 @@ const VariablePopover = ({
 };
 
 // Main component
-const LiquidCodeEditor = ({ variables = [], value = "" }) => {
-  const [filteredVariables, setFilteredVariables] = useState(variables);
-  const [searchTerm, setSearchTerm] = useState("");
-
+const LiquidCodeEditor = ({ value = "" }) => {
   const {
     content,
     setContent,
@@ -276,6 +318,7 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     editorRef,
     wasInWysiwygMode,
     initialRender,
+    variables,
   } = useEditorState(value);
 
   const {
@@ -287,6 +330,9 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     setSavedRange,
     popoverRef,
   } = useVariablePopover(variables);
+
+  const [filteredVariables, setFilteredVariables] = useState(variables);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Update filtered variables when search term changes
   useEffect(() => {
@@ -457,7 +503,9 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
       case "h3":
         newText = `<h3>${selectedText}</h3>`;
         break;
-
+      case "p":
+        newText = `<p>${selectedText}</p>`;
+        break;
       case "align-left":
         newText = `<div style="text-align: left">${selectedText}</div>`;
         break;
@@ -586,29 +634,31 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
 
     // Get all liquid control flow tags from rawContentRef
     const liquidTags = rawContentRef.current.match(/{%[^%]+%}/g) || [];
-    
+
     // Get current content without liquid tags
     const currentContent = editorRef.current.innerHTML;
-    
+
     // Create a map of text positions to liquid tags
     const tagPositions = new Map();
     let lastIndex = 0;
-    let plainText = currentContent.replace(/<[^>]+>/g, ''); // Remove HTML tags
-    
-    liquidTags.forEach(tag => {
+    let plainText = currentContent.replace(/<[^>]+>/g, ""); // Remove HTML tags
+
+    liquidTags.forEach((tag) => {
       // Find appropriate position for the tag
       const beforeTag = tag.match(/{%\s*(if|unless|case|for|capture)/);
-      const afterTag = tag.match(/{%\s*(endif|endunless|endcase|endfor|endcapture)/);
-      
+      const afterTag = tag.match(
+        /{%\s*(endif|endunless|endcase|endfor|endcapture)/
+      );
+
       if (beforeTag) {
         // For opening tags, insert at the next line break or current position
-        const nextBreak = plainText.indexOf('\n', lastIndex);
+        const nextBreak = plainText.indexOf("\n", lastIndex);
         const position = nextBreak > -1 ? nextBreak : lastIndex;
         tagPositions.set(position, tag);
         lastIndex = position + 1;
       } else if (afterTag) {
         // For closing tags, insert at the previous line break or current position
-        const prevBreak = plainText.lastIndexOf('\n', lastIndex);
+        const prevBreak = plainText.lastIndexOf("\n", lastIndex);
         const position = prevBreak > -1 ? prevBreak : lastIndex;
         tagPositions.set(position, tag);
         lastIndex = position + 1;
@@ -616,18 +666,18 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     });
 
     // Update rawContentRef with the current content and preserved liquid tags
-    let newContent = '';
+    let newContent = "";
     let currentPos = 0;
-    
+
     Array.from(tagPositions.entries())
       .sort(([a], [b]) => a - b)
       .forEach(([position, tag]) => {
         newContent += currentContent.slice(currentPos, position) + tag;
         currentPos = position;
       });
-    
+
     newContent += currentContent.slice(currentPos);
-    
+
     // Update content state
     setContent(currentContent);
     rawContentRef.current = newContent;
@@ -648,31 +698,31 @@ const LiquidCodeEditor = ({ variables = [], value = "" }) => {
     }
 
     const variableText = `{{ ${variable.name} }}`;
-    
+
     // Create a temporary container
-    const tempContainer = document.createElement('div');
-    
+    const tempContainer = document.createElement("div");
+
     // Create the highlight span
-    const span = document.createElement('span');
-    span.className = 'highlight-liquid';
+    const span = document.createElement("span");
+    span.className = "highlight-liquid";
     span.textContent = variableText;
-    
+
     // Create a text node for the space
-    const spaceNode = document.createTextNode('\u00A0');
-    
+    const spaceNode = document.createTextNode("\u00A0");
+
     // Add elements to container
     tempContainer.appendChild(span);
     tempContainer.appendChild(spaceNode);
-    
+
     // Get current selection
     const selection = window.getSelection();
     const range = selection.getRangeAt(0);
-    
+
     // Insert the content
     range.deleteContents();
     const fragment = range.createContextualFragment(tempContainer.innerHTML);
     range.insertNode(fragment);
-    
+
     // Move cursor after the space
     range.setStartAfter(spaceNode);
     range.setEndAfter(spaceNode);
@@ -926,18 +976,6 @@ const EditorStyles = () => (
 );
 
 const LiquidCodeEditorWrapper = () => {
-  const variables = [
-    { name: "product.title", description: "The title of the product" },
-    {
-      name: "product.description",
-      description: "The description of the product",
-    },
-    { name: "product.price", description: "The price of the product" },
-    {
-      name: "product.available",
-      description: "Whether the product is available",
-    },
-  ];
   const value = `{% capture email_title %}
     {% if has_pending_payment %}
       Thank you for your order!
@@ -992,7 +1030,7 @@ const LiquidCodeEditorWrapper = () => {
     {% endif %}
   {% endcapture %}`;
 
-  return <LiquidCodeEditor variables={variables} value={value} />;
+  return <LiquidCodeEditor value={value} />;
 };
 
 export default LiquidCodeEditorWrapper;
