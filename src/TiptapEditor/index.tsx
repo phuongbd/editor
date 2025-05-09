@@ -27,6 +27,8 @@ import BackgroundColor from './BackgroundColorExtension';
 import GeneralInlineStyleExtension from './GeneralInlineStyleExtension';
 import { CustomNodeExtensions } from './CustomNodeExtension';
 import ExtendedHTMLExtension from './ExtendedHtmlExtension';
+import SpanMark from './SpanExtension';
+import BackgroundSpanNode from './BackgroundSpanExtension';
 
 const lowlight = createLowlight(common);
 lowlight.register('javascript', javascript);
@@ -88,6 +90,8 @@ const TiptapEditor: React.FC<RichTextEditorProps> = ({ value, valueDefault = '',
       }),
       BackgroundColor,
       GeneralInlineStyleExtension,
+      BackgroundSpanNode,
+      SpanMark,
       ...CustomNodeExtensions,
       ExtendedHTMLExtension,
     ],

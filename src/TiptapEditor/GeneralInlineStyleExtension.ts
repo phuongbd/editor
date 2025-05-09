@@ -24,7 +24,24 @@ const GeneralInlineStyleExtension = Extension.create<GeneralInlineStyleOptions>(
 
   addOptions() {
     return {
-      types: ['textStyle'],
+      types: [
+        'textStyle',
+        'paragraph',
+        'heading',
+        'bulletList',
+        'orderedList',
+        'listItem',
+        'bold',
+        'italic',
+        'underline',
+        'strike',
+        'link',
+        'code',
+        'codeBlock',
+        'blockquote',
+        'image',
+        'span',
+      ],
     };
   },
 

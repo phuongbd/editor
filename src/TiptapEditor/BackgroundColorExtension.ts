@@ -24,7 +24,7 @@ const BackgroundColor = Extension.create<BackgroundColorOptions>({
 
   addOptions() {
     return {
-      types: ['textStyle'],
+      types: ['textStyle', 'span'],
     };
   },
 
