@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import './App.css';
 import TiptapEditor from './TiptapEditor';
+import { AppProvider } from '@shopify/polaris';
+import '@shopify/polaris/build/esm/styles.css';
 
 function App() {
   const initialValue = `<p><span style="background-color: rgb(228, 204, 153);"><strong><span style="color: #1f2124;">&nbsp;</span></strong><strong><span style="color: #1f2124;"><u>Beschreibung</u></span></strong><strong><span style="color: #1f2124;">&nbsp;</span></strong></span><br>Die Fleischtomate 'San Marzano' ist eine mehrjährige, alte
@@ -15,9 +17,11 @@ function App() {
   const [value, setValue] = useState(initialValue);
 
   return (
-    <div className="App">
-      <TiptapEditor value={value} onChange={(value) => setValue(value)} disabled={false} />
-    </div>
+    <AppProvider i18n={{}}>
+      <div className="App">
+        <TiptapEditor value={value} onChange={(value) => setValue(value)} disabled={false} />
+      </div>
+    </AppProvider>
   );
 }
 

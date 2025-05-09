@@ -15,7 +15,7 @@ import {
   ButtonRow,
 } from './styled';
 import { Button, ButtonGroup, TextField } from '@shopify/polaris';
-import apiCommon from '@/api';
+// import apiCommon from '@/api';
 interface ImageUploadModalProps {
   onClose: () => void;
   onImageSelected: (imageUrl: string) => void;
@@ -44,30 +44,30 @@ const ImageUploadModal: React.FC<ImageUploadModalProps> = ({ onClose, onImageSel
   };
 
   const handleUpload = useCallback(async (file: File) => {
-    const resGet = await apiCommon.getPreSignedUploadFile({
-      file_name: file.name,
-    });
+    // const resGet = await apiCommon.getPreSignedUploadFile({
+    //   file_name: file.name,
+    // });
 
-    await apiCommon.uploadFileForEditor(resGet.data.pre_signed, file);
-    return resGet.data.file_path;
+    // await apiCommon.uploadFileForEditor(resGet.data.pre_signed, file);
+    // return resGet.data.file_path;
   }, []);
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    // const file = event.target.files?.[0];
 
-    if (file) {
-      if (!validateFile(file)) return;
-      try {
-        const blobInfo = await handleUpload(file);
-        if (blobInfo) {
-          setPreviewUrl(blobInfo);
-          setIsLoading(false);
-        }
-      } catch (error) {
-        setIsLoading(false);
-      }
-      return;
-    }
+    // if (file) {
+    //   if (!validateFile(file)) return;
+    //   try {
+    //     const blobInfo = await handleUpload(file);
+    //     if (blobInfo) {
+    //       setPreviewUrl(blobInfo);
+    //       setIsLoading(false);
+    //     }
+    //   } catch (error) {
+    //     setIsLoading(false);
+    //   }
+    //   return;
+    // }
   };
 
   const handleUrlChange = (value: string) => {
