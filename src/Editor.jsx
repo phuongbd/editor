@@ -935,7 +935,7 @@ const LiquidCodeEditor = ({ value = "", onChange }) => {
       </div>
 
       <div className="flex justify-end items-center px-4 py-2 border-t bg-gray-50 text-xs text-gray-500">
-        <div>{content.length} characters</div>
+        <div>{previewMode ? cleanContent(content).length : content.length} characters</div>
       </div>
 
       <EditorStyles />
@@ -1047,9 +1047,9 @@ const EditorStyles = () => (
 const LiquidCodeEditorWrapper = () => {
   const value = `{% capture email_title %}
     {% if has_pending_payment %}
-      Thank you for your order!
+      <h2>Thank you for your order!</h2>
     {% else %}
-      Thank you for your purchase!
+      <h3>Thank you for your purchase!</h3>
     {% endif %}
   {% endcapture %}
   {% capture email_body %}
