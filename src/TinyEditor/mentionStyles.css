@@ -1,0 +1,42 @@
+.mention-popover-container {
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.15);
+  background-color: white;
+  overflow: hidden;
+  min-width: 220px;
+  max-width: 320px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+.mention-variable-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.mention-variable-item:hover {
+  background-color: #f4f6f8;
+}
+
+.mention-search-input {
+  width: 100%;
+  padding: 8px;
+  border: none;
+  border-bottom: 1px solid #dfe3e8;
+  outline: none;
+  font-size: 14px;
+}
+
+.mention-empty-state {
+  padding: 16px;
+  text-align: center;
+  color: #637381;
+}
+
+.mention-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  color: #637381;
+} 
