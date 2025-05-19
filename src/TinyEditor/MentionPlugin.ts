@@ -120,19 +120,79 @@ export const setupMentionPlugin = (editor: TinyMCEEditor) => {
       }
     }
     
-    // Now insert the variable at the current position
+    // Use a bookmarking approach - this is the most reliable way 
+    // to maintain cursor position in TinyMCE
+    
+    // Create a bookmark before insertion
+    const bookmark = editor.selection.getBookmark(2, true);
+    
+    // Insert the variable directly
     editor.execCommand('mceInsertContent', false, variable);
     
-    // Move cursor after the inserted variable
-    const newContent = editor.getContent();
-    const newSelection = editor.selection;
-    newSelection.collapse(false); // Move to end of selection
+    // Move the cursor to the end of the inserted content
+    editor.selection.moveToBookmark(bookmark);
     
-    // After insertion, run the decoration process
+    // Make sure we're at the end of the variable
+    const currentRange = editor.selection.getRng();
+    const containerNode = currentRange.startContainer;
+    
+    // Insert a bookmark at the end of the variable
+    // This ensures we can find this position even after decoration
+    const endBookmarkId = 'end-' + Date.now();
+    const bookmarkSpan = editor.getDoc().createElement('span');
+    bookmarkSpan.id = endBookmarkId;
+    bookmarkSpan.setAttribute('data-mce-type', 'bookmark');
+    bookmarkSpan.style.display = 'none';
+    
+    // Insert the bookmark span
+    currentRange.insertNode(bookmarkSpan);
+    
+    // Insert a zero-width space character after the variable
+    // This will force proper node separation when typing
+    const zwsNode = editor.getDoc().createTextNode('\u200B');
+    bookmarkSpan.parentNode?.insertBefore(zwsNode, bookmarkSpan.nextSibling);
+    
+    // Move the cursor after our inserted content
+    const newRange = editor.dom.createRng();
+    newRange.setStartAfter(bookmarkSpan);
+    newRange.setEndAfter(bookmarkSpan);
+    editor.selection.setRng(newRange);
+    
+    // Remove the bookmark after a short delay
+    // This ensures the cursor positioning has taken effect
+    setTimeout(() => {
+      const bookmarkEl = editor.dom.get(endBookmarkId);
+      if (bookmarkEl) {
+        editor.dom.remove(bookmarkEl);
+      }
+      editor.focus();
+    }, 10);
+    
+    // After insertion, run the decoration process with a delay
+    // This ensures our bookmark-based positioning has time to take effect
     if (typeof (editor.plugins as any).liquid?.decorateLiquidSyntax === 'function') {
       setTimeout(() => {
+        // Run the decoration
         (editor.plugins as any).liquid.decorateLiquidSyntax();
-      }, 0);
+        
+        // Find our bookmark again (in case it was moved during decoration)
+        setTimeout(() => {
+          const bookmarkEl = editor.dom.get(endBookmarkId);
+          if (bookmarkEl) {
+            // Position cursor right after our bookmark
+            const bookmarkRange = editor.dom.createRng();
+            bookmarkRange.setStartAfter(bookmarkEl);
+            bookmarkRange.setEndAfter(bookmarkEl);
+            editor.selection.setRng(bookmarkRange);
+            
+            // Remove the bookmark
+            editor.dom.remove(bookmarkEl);
+          }
+          
+          editor.focus();
+          editor.nodeChanged();
+        }, 50);
+      }, 100);
     }
   };
 

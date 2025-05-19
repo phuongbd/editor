@@ -60,4 +60,14 @@
 
 .inline-example .liquid-tag {
   display: none;
+}
+
+/* Add this to ensure zero-width spaces adjacent to liquid tags don't cause issues */
+.mce-content-body span.liquid-tag + span {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.mce-content-body span.liquid-tag + br {
+  display: none;
 } 

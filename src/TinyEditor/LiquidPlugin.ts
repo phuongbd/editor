@@ -81,6 +81,14 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
           if (node.parentElement?.hasAttribute('data-liquid')) {
             return NodeFilter.FILTER_SKIP;
           }
+          
+          // Skip empty text nodes or those containing only zero-width spaces
+          // These are often used as text node separators
+          const content = node.textContent || '';
+          if (content === '' || content === '\u200B') {
+            return NodeFilter.FILTER_SKIP;
+          }
+          
           return NodeFilter.FILTER_ACCEPT;
         }
       } as NodeFilter
@@ -153,8 +161,21 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
         span.className = type === 'variable' ? 'liquid-variable' : 'liquid-tag';
         span.setAttribute('data-liquid', 'true');
         span.setAttribute('data-liquid-type', type);
+        span.setAttribute('contenteditable', 'false'); // Make it non-editable
         span.textContent = matchText;
-        fragments.unshift(span);
+        
+        // Create a document fragment to hold our elements
+        const spanWrapper = editor.getDoc().createDocumentFragment();
+        spanWrapper.appendChild(span);
+        
+        // Only add zero-width space after visible liquid variables, not after hidden liquid tags
+        if (type === 'variable') {
+          // Add an empty text node after the span to ensure separation
+          const emptyTextNode = document.createTextNode('\u200B'); // Zero-width space
+          spanWrapper.appendChild(emptyTextNode);
+        }
+        
+        fragments.unshift(spanWrapper);
         
         // Text before the match
         if (index > 0) {
@@ -196,8 +217,22 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
     if (decorationTimeout) {
       clearTimeout(decorationTimeout);
     }
+    
+    // Store cursor position before decoration
+    const selection = editor.selection;
+    const rng = selection.getRng().cloneRange();
+    
     decorationTimeout = window.setTimeout(() => {
+      // Apply decorations
       decorateLiquidSyntax();
+      
+      // Restore cursor position after decoration
+      try {
+        editor.selection.setRng(rng);
+      } catch (e) {
+        // If restoring fails, just leave cursor where it is
+      }
+      
       decorationTimeout = null;
     }, 200);
   };
