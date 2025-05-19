@@ -5,6 +5,9 @@ const liquidVariableRegex = /(\{\{\s*[^{}]+?\s*\}\})/g;
 const liquidTagRegex = /(\{%\s*[^{}]+?\s*%\})/g;
 
 export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
+  // Track if we're currently in a decoration cycle to prevent recursion
+  let isDecorating = false;
+  
   // Add CSS for Liquid syntax highlighting
   editor.on('init', () => {
     const css = `
@@ -22,219 +25,106 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
     // Insert CSS into editor
     const styleElement = editor.dom.create('style', { type: 'text/css' }, css);
     editor.getDoc().head.appendChild(styleElement);
-  });
-
-  // Normalize document by removing nested liquid spans before applying new highlights
-  const normalizeDocument = () => {
-    const body = editor.getBody();
     
-    // Find all liquid spans
-    const liquidSpans = body.querySelectorAll('span[data-liquid="true"]');
-    
-    // For each liquid span, check if it's inside another liquid span
-    liquidSpans.forEach(span => {
-      // If this is inside another liquid span, unwrap it (move its content to parent)
-      if (span.parentElement?.hasAttribute('data-liquid')) {
-        // Get the parent
-        const parent = span.parentElement;
-        
-        // Move this span's content directly to the parent
-        while (span.firstChild) {
-          parent.insertBefore(span.firstChild, span);
-        }
-        
-        // Remove the empty span
-        parent.removeChild(span);
-      }
+    // Initial decoration after editor is fully loaded
+    setTimeout(() => {
+      const content = editor.getContent();
+      const decoratedContent = decorateContent(content);
       
-      // If span contains other spans, unwrap all inner spans
-      const innerSpans = span.querySelectorAll('span[data-liquid="true"]');
-      innerSpans.forEach(innerSpan => {
-        // Get the parent
-        const parent = innerSpan.parentElement;
-        
-        // Move this span's content to before it
-        while (innerSpan.firstChild) {
-          parent?.insertBefore(innerSpan.firstChild, innerSpan);
-        }
-        
-        // Remove the empty span
-        parent?.removeChild(innerSpan);
-      });
+      // Only set if there's a difference to avoid cursor jumps
+      if (content !== decoratedContent) {
+        // Use silent mode to prevent firing change events
+        editor.setContent(decoratedContent, { no_events: true });
+      }
+    }, 500);
+  });
+  
+  // Helper function to decorate liquid syntax in raw content
+  const decorateContent = (content: string): string => {
+    // First, temporarily replace any already-decorated liquid elements
+    // to prevent double-decoration
+    let processedContent = content;
+    
+    // Create a placeholder pattern that won't be matched by our regex
+    const liquidTagPlaceholders: string[] = [];
+    const liquidVariablePlaceholders: string[] = [];
+    
+    // Replace already decorated variables with placeholders
+    processedContent = processedContent.replace(
+      /<span[^>]*?data-liquid-type="variable"[^>]*?>(.*?)<\/span>/gi,
+      (match, innerContent) => {
+        const id = `__LIQUID_VARIABLE_${liquidVariablePlaceholders.length}__`;
+        liquidVariablePlaceholders.push(innerContent);
+        return id;
+      }
+    );
+    
+    // Replace already decorated tags with placeholders
+    processedContent = processedContent.replace(
+      /<span[^>]*?data-liquid-type="tag"[^>]*?>(.*?)<\/span>/gi,
+      (match, innerContent) => {
+        const id = `__LIQUID_TAG_${liquidTagPlaceholders.length}__`;
+        liquidTagPlaceholders.push(innerContent);
+        return id;
+      }
+    );
+    
+    // Now decorate any remaining non-decorated liquid variables
+    processedContent = processedContent.replace(liquidVariableRegex, (match) => {
+      return `<span class="liquid-variable" data-liquid="true" data-liquid-type="variable" contenteditable="false">${match}</span>`;
     });
+    
+    // Decorate any remaining non-decorated liquid tags
+    processedContent = processedContent.replace(liquidTagRegex, (match) => {
+      return `<span class="liquid-tag" data-liquid="true" data-liquid-type="tag" contenteditable="false">${match}</span>`;
+    });
+    
+    // Restore original decorated variables
+    liquidVariablePlaceholders.forEach((content, index) => {
+      const placeholder = `__LIQUID_VARIABLE_${index}__`;
+      processedContent = processedContent.replace(
+        placeholder,
+        `<span class="liquid-variable" data-liquid="true" data-liquid-type="variable" contenteditable="false">${content}</span>`
+      );
+    });
+    
+    // Restore original decorated tags
+    liquidTagPlaceholders.forEach((content, index) => {
+      const placeholder = `__LIQUID_TAG_${index}__`;
+      processedContent = processedContent.replace(
+        placeholder,
+        `<span class="liquid-tag" data-liquid="true" data-liquid-type="tag" contenteditable="false">${content}</span>`
+      );
+    });
+    
+    return processedContent;
   };
 
   // Function to apply decorations to Liquid syntax
   const decorateLiquidSyntax = () => {
-    // First, normalize document to remove any nested spans
-    normalizeDocument();
+    if (isDecorating) return;
     
-    const body = editor.getBody();
-    
-    // Find all text nodes in the editor (that are not already inside a liquid span)
-    const walker = document.createTreeWalker(
-      body, 
-      NodeFilter.SHOW_TEXT, 
-      {
-        acceptNode: (node) => {
-          // Skip text nodes that are inside liquid spans
-          if (node.parentElement?.hasAttribute('data-liquid')) {
-            return NodeFilter.FILTER_SKIP;
-          }
-          
-          // Skip empty text nodes or those containing only zero-width spaces
-          // These are often used as text node separators
-          const content = node.textContent || '';
-          if (content === '' || content === '\u200B') {
-            return NodeFilter.FILTER_SKIP;
-          }
-          
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      } as NodeFilter
-    );
-    
-    const nodesToProcess: {node: Node, matches: {index: number, text: string, type: 'variable' | 'tag'}[]}[] = [];
-    
-    let node;
-    while ((node = walker.nextNode())) {
-      const text = node.textContent || '';
+    try {
+      isDecorating = true;
       
-      // Find all Liquid variables in this text node
-      const variableMatches: {index: number, text: string, type: 'variable' | 'tag'}[] = [];
-      let match;
+      // Create a bookmark to restore cursor position
+      const bookmark = editor.selection.getBookmark(2, true);
       
-      liquidVariableRegex.lastIndex = 0;
-      while ((match = liquidVariableRegex.exec(text)) !== null) {
-        variableMatches.push({
-          index: match.index,
-          text: match[0],
-          type: 'variable'
-        });
+      // Get current content and decorate it
+      const content = editor.getContent();
+      const decoratedContent = decorateContent(content);
+      
+      // Only update if there's a difference
+      if (content !== decoratedContent) {
+        // Use silent mode to prevent firing events that would trigger this same method
+        editor.setContent(decoratedContent, { no_events: true });
+        
+        // Restore the cursor position
+        editor.selection.moveToBookmark(bookmark);
       }
-      
-      // Find all Liquid tags in this text node
-      liquidTagRegex.lastIndex = 0;
-      while ((match = liquidTagRegex.exec(text)) !== null) {
-        variableMatches.push({
-          index: match.index,
-          text: match[0],
-          type: 'tag'
-        });
-      }
-      
-      if (variableMatches.length > 0) {
-        nodesToProcess.push({
-          node,
-          matches: variableMatches.sort((a, b) => a.index - b.index)
-        });
-      }
+    } finally {
+      isDecorating = false;
     }
-    
-    // Process nodes in reverse to avoid messing up indices
-    for (let i = nodesToProcess.length - 1; i >= 0; i--) {
-      const { node, matches } = nodesToProcess[i];
-      const text = node.textContent || '';
-      
-      let lastIndex = text.length;
-      const fragments = [];
-      
-      // Process matches in reverse order
-      for (let j = matches.length - 1; j >= 0; j--) {
-        const match = matches[j];
-        const { index, text: matchText, type } = match;
-        
-        // Text after the match
-        if (index + matchText.length < lastIndex) {
-          const afterText = text.substring(index + matchText.length, lastIndex);
-          if (afterText.trim() !== '') {
-            // Insert the text after the match as a separate text node to maintain styling separation
-            fragments.unshift(document.createTextNode(afterText));
-          } else {
-            // If it's just whitespace, keep it as string to merge with other whitespace
-            fragments.unshift(afterText);
-          }
-        }
-        
-        // Create span for Liquid syntax
-        const span = editor.getDoc().createElement('span');
-        span.className = type === 'variable' ? 'liquid-variable' : 'liquid-tag';
-        span.setAttribute('data-liquid', 'true');
-        span.setAttribute('data-liquid-type', type);
-        span.setAttribute('contenteditable', 'false'); // Make it non-editable
-        span.textContent = matchText;
-        
-        // Create a document fragment to hold our elements
-        const spanWrapper = editor.getDoc().createDocumentFragment();
-        spanWrapper.appendChild(span);
-        
-        // Only add zero-width space after visible liquid variables, not after hidden liquid tags
-        if (type === 'variable') {
-          // Add an empty text node after the span to ensure separation
-          const emptyTextNode = document.createTextNode('\u200B'); // Zero-width space
-          spanWrapper.appendChild(emptyTextNode);
-        }
-        
-        fragments.unshift(spanWrapper);
-        
-        // Text before the match
-        if (index > 0) {
-          const beforeText = text.substring(0, index);
-          if (beforeText.trim() !== '') {
-            // Insert the text before the match as a separate text node
-            fragments.unshift(document.createTextNode(beforeText));
-          } else {
-            // If it's just whitespace, keep it as string to merge with other whitespace
-            fragments.unshift(beforeText);
-          }
-        }
-        
-        lastIndex = index;
-      }
-      
-      // Replace the node with our fragments
-      const parent = node.parentNode;
-      if (parent) {
-        const fragment = editor.getDoc().createDocumentFragment();
-        fragments.forEach(item => {
-          if (typeof item === 'string') {
-            fragment.appendChild(document.createTextNode(item));
-          } else if (item instanceof Text) {
-            fragment.appendChild(item);
-          } else {
-            fragment.appendChild(item);
-          }
-        });
-        
-        parent.replaceChild(fragment, node);
-      }
-    }
-  };
-
-  // Add debounce mechanism to avoid too frequent updates
-  let decorationTimeout: number | null = null;
-  const debouncedDecorate = () => {
-    if (decorationTimeout) {
-      clearTimeout(decorationTimeout);
-    }
-    
-    // Store cursor position before decoration
-    const selection = editor.selection;
-    const rng = selection.getRng().cloneRange();
-    
-    decorationTimeout = window.setTimeout(() => {
-      // Apply decorations
-      decorateLiquidSyntax();
-      
-      // Restore cursor position after decoration
-      try {
-        editor.selection.setRng(rng);
-      } catch (e) {
-        // If restoring fails, just leave cursor where it is
-      }
-      
-      decorationTimeout = null;
-    }, 200);
   };
 
   // Handle atomic deletion of Liquid syntax
@@ -250,25 +140,13 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
     if (node && node.getAttribute('data-liquid') === 'true') {
       e.preventDefault();
       node.remove();
-      return;
-    }
-    
-    // Check if selection contains Liquid elements
-    if (!range.collapsed) {
-      const selectedNodes = editor.selection.getSelectedBlocks();
-      let containsLiquid = false;
       
-      selectedNodes.forEach(block => {
-        const liquidElements = block.querySelectorAll('[data-liquid="true"]');
-        if (liquidElements.length > 0) {
-          containsLiquid = true;
-        }
+      // Trigger a manual content update without triggering events
+      editor.undoManager.transact(() => {
+        editor.setDirty(true);
       });
       
-      if (containsLiquid) {
-        // Let TinyMCE handle the deletion, but refresh our decorations afterward
-        setTimeout(decorateLiquidSyntax, 0);
-      }
+      return;
     }
   };
 
@@ -291,10 +169,44 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
   editor.on('KeyDown', handleDelete);
   editor.on('click', handleClick);
   
-  // Apply decorations when content changes, but with debounce
-  editor.on('SetContent', decorateLiquidSyntax);
-  editor.on('input', debouncedDecorate);
-  editor.on('change', debouncedDecorate);
+  // Debounce decoration to avoid performance issues
+  let decorationTimeout: number | null = null;
+  const debouncedDecorate = () => {
+    if (decorationTimeout) {
+      clearTimeout(decorationTimeout);
+    }
+    
+    decorationTimeout = window.setTimeout(() => {
+      decorateLiquidSyntax();
+      decorationTimeout = null;
+    }, 800); // Long delay to avoid interfering with typing
+  };
+  
+  // Apply decorations when content changes
+  editor.on('SetContent', () => {
+    if (!isDecorating) {
+      setTimeout(decorateLiquidSyntax, 0);
+    }
+  });
+  
+  // Use blur event instead of input/change for better user experience
+  // This way decoration only happens when user finishes editing
+  editor.on('blur', debouncedDecorate);
+  
+  // Also decorate on node change when we might have affected liquid tags
+  editor.on('NodeChange', () => {
+    // Short delay to let TinyMCE finish its own processing
+    setTimeout(() => {
+      const selectedNode = editor.selection.getNode();
+      // Only decorate if we're near a liquid tag
+      if (selectedNode.querySelector('[data-liquid]') || 
+          selectedNode.closest('[data-liquid]') || 
+          selectedNode.innerHTML.includes('{{') || 
+          selectedNode.innerHTML.includes('{%')) {
+        debouncedDecorate();
+      }
+    }, 100);
+  });
   
   return {
     decorateLiquidSyntax

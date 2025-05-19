@@ -62,12 +62,30 @@
   display: none;
 }
 
-/* Add this to ensure zero-width spaces adjacent to liquid tags don't cause issues */
-.mce-content-body span.liquid-tag + span {
+/* Fix cursor positioning issues */
+.mce-content-body {
+  position: relative;
+}
+
+/* Ensure text nodes around liquid tags are properly handled */
+.mce-content-body span.liquid-tag {
+  display: none;
+  user-select: none;
+}
+
+/* Ensure spaces after liquid tags are not visible */
+.mce-content-body span.liquid-tag + :not(span) {
   margin-left: 0;
   padding-left: 0;
 }
 
+/* Remove any leftover spacing artifacts */
 .mce-content-body span.liquid-tag + br {
   display: none;
+}
+
+/* Ensure consistent cursor behavior around liquid elements */
+.mce-content-body span[data-liquid="true"] {
+  cursor: pointer;
+  user-select: all;
 } 
