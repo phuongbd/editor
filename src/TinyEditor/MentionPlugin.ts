@@ -66,25 +66,49 @@ export const setupMentionAutocompleter = (editor: TinyMCEEditor) => {
       onAction: (autocompleteApi, rng, value) => {
         // Insert the selected variable
         editor.selection.setRng(rng);
-        editor.insertContent(value);
-        autocompleteApi.hide();
         
-        // Position cursor after the inserted variant
-        const newRange = editor.selection.getRng();
-        const startContainer = newRange.startContainer;
+        // Debug log for cursor position before insertion
+        console.log('Before insertion - Range:', {
+          startContainer: rng.startContainer,
+          startOffset: rng.startOffset,
+          endContainer: rng.endContainer,
+          endOffset: rng.endOffset
+        });
         
-        if (startContainer && startContainer.nodeType === Node.TEXT_NODE) {
-          const textContent = startContainer.textContent || '';
-          const cursorPos = newRange.startOffset;
-          const variantEndPos = textContent.indexOf('}}', cursorPos);
+        try {
+          // Insert the variable with a space and a marker for better cursor positioning
+          editor.insertContent(value + ' <span id="temp-cursor-fix"></span>');
+          autocompleteApi.hide();
           
-          if (variantEndPos !== -1) {
-            // Create a new range and position it after the closing braces
-            const cursorRange = editor.dom.createRng();
-            cursorRange.setStart(startContainer, variantEndPos + 2);
-            cursorRange.setEnd(startContainer, variantEndPos + 2);
-            editor.selection.setRng(cursorRange);
+          // Immediately create a bookmark to track our position 
+          const bookmark = editor.selection.getBookmark();
+          
+          // Find our marker
+          const marker = editor.dom.get('temp-cursor-fix');
+          if (marker) {
+            // Place cursor right after the marker
+            const markerRange = editor.dom.createRng();
+            markerRange.setStartBefore(marker);
+            markerRange.setEndBefore(marker);
+            editor.selection.setRng(markerRange);
+            
+            // Remove the marker
+            editor.dom.remove(marker);
           }
+          
+          // Force visibility of the cursor
+          editor.focus();
+          
+          // Debug log for final cursor position
+          const finalRange = editor.selection.getRng();
+          console.log('Final cursor position with direct DOM approach:', {
+            startContainer: finalRange.startContainer,
+            startOffset: finalRange.startOffset,
+            endContainer: finalRange.endContainer,
+            endOffset: finalRange.endOffset
+          });
+        } catch (error) {
+          console.error('Error setting cursor position:', error);
         }
         
         // Update liquid syntax highlighting if available
@@ -125,6 +149,71 @@ export const setupMentionPlugin = (editor: TinyMCEEditor) => {
     offset: number;
     bracePos: number;
   } | null = null;
+  
+  // Add debug listener for mouse clicks to track cursor position
+  const handleMouseUp = () => {
+    try {
+      setTimeout(() => {
+        // Use setTimeout to ensure selection is updated after click
+        const selection = editor.selection;
+        const range = selection.getRng();
+        
+        if (range && range.startContainer) {
+          const node = range.startContainer;
+          const textContent = node.nodeType === Node.TEXT_NODE ? node.textContent : null;
+          
+          console.log('DEBUG - Cursor position after click:', {
+            startContainer: range.startContainer,
+            startOffset: range.startOffset,
+            endContainer: range.endContainer,
+            endOffset: range.endOffset,
+            nodeType: node.nodeType,
+            nodeName: node.nodeName,
+            parentNodeName: node.parentNode ? node.parentNode.nodeName : null,
+            textContent: textContent,
+            isElement: node.nodeType === Node.ELEMENT_NODE,
+            isText: node.nodeType === Node.TEXT_NODE,
+            elementInfo: node.nodeType === Node.ELEMENT_NODE ? {
+              tagName: (node as Element).tagName,
+              className: (node as Element).className,
+              id: (node as Element).id
+            } : null,
+            previousSibling: node.previousSibling ? {
+              nodeName: node.previousSibling.nodeName,
+              nodeType: node.previousSibling.nodeType,
+              textContent: node.previousSibling.nodeType === Node.TEXT_NODE ? node.previousSibling.textContent : null
+            } : null,
+            nextSibling: node.nextSibling ? {
+              nodeName: node.nextSibling.nodeName,
+              nodeType: node.nextSibling.nodeType,
+              textContent: node.nextSibling.nodeType === Node.TEXT_NODE ? node.nextSibling.textContent : null
+            } : null,
+            surroundingText: node.nodeType === Node.TEXT_NODE && textContent ? {
+              before: range.startOffset > 10 ? textContent.substring(range.startOffset - 10, range.startOffset) : textContent.substring(0, range.startOffset),
+              after: textContent.substring(range.startOffset, range.startOffset + 10)
+            } : null
+          });
+          
+          // Additional check: Look for Liquid variables around the cursor
+          if (node.nodeType === Node.TEXT_NODE && textContent) {
+            const nearbyVariableStart = textContent.substring(0, range.startOffset).lastIndexOf('{{');
+            const nearbyVariableEnd = textContent.indexOf('}}', range.startOffset);
+            
+            if (nearbyVariableStart !== -1 && nearbyVariableEnd !== -1) {
+              console.log('DEBUG - Nearby Liquid variable:', {
+                variable: textContent.substring(nearbyVariableStart, nearbyVariableEnd + 2),
+                distanceToStart: range.startOffset - nearbyVariableStart,
+                distanceToEnd: nearbyVariableEnd + 2 - range.startOffset,
+                isCursorInside: nearbyVariableStart < range.startOffset && range.startOffset < nearbyVariableEnd + 2
+              });
+            }
+          }
+        }
+      }, 0);
+    } catch (error) {
+      console.error('Error in click debug logging:', error);
+    }
+  };
   
   // Let's use a debounce function to check for triggers
   let mentionCheckTimeout: number | null = null;
@@ -180,6 +269,17 @@ export const setupMentionPlugin = (editor: TinyMCEEditor) => {
       const originalSelection = editor.selection;
       const originalRange = originalSelection.getRng();
       
+      // Debug log for cursor position before insertion
+      console.log('Before insertion - Original Range:', {
+        startContainer: originalRange.startContainer,
+        startOffset: originalRange.startOffset,
+        endContainer: originalRange.endContainer,
+        endOffset: originalRange.endOffset,
+        textContent: originalRange.startContainer.nodeType === Node.TEXT_NODE 
+          ? originalRange.startContainer.textContent 
+          : null
+      });
+      
       // Remember cursor info before closing popover
       const currentCursorInfo = cursorInfo;
       
@@ -199,51 +299,121 @@ export const setupMentionPlugin = (editor: TinyMCEEditor) => {
         // Set the selection to this range
         editor.selection.setRng(range);
         
-        // Insert the variable, replacing the selected '{{' characters
-        editor.execCommand('mceInsertContent', false, variable);
+        // Debug log for replacement range
+        console.log('Replacement Range:', {
+          startContainer: range.startContainer,
+          startOffset: range.startOffset,
+          endContainer: range.endContainer,
+          endOffset: range.endOffset,
+          textContent: range.startContainer.nodeType === Node.TEXT_NODE 
+            ? range.startContainer.textContent 
+            : null,
+          replacing: range.startContainer.nodeType === Node.TEXT_NODE 
+            ? (range.startContainer.textContent || '').substring(range.startOffset, range.endOffset) 
+            : null
+        });
         
-        // Position cursor immediately after the inserted variant
-        const newRange = editor.selection.getRng();
-        const variantInsertionNode = newRange.startContainer;
-        let newPosition = newRange.startOffset;
+        // Insert the variable, replacing the selected '{{' characters AND adding a space and marker after it
+        editor.execCommand('mceInsertContent', false, variable + ' <span id="temp-cursor-fix"></span>');
         
-        // If the variant was split across multiple nodes or inserted as a new node,
-        // we need to find where it ends
-        if (variantInsertionNode.nodeType === Node.TEXT_NODE) {
-          const textContent = variantInsertionNode.textContent || '';
-          const variantEndPos = textContent.indexOf('}}', newRange.startOffset);
-          
-          if (variantEndPos !== -1) {
-            // Position cursor after the closing braces
-            newPosition = variantEndPos + 2;
+        // Log detailed DOM state right after insertion
+        console.log('DEBUG - DOM state after variable insertion:', {
+          markerExists: !!editor.dom.get('temp-cursor-fix'),
+          editorHtml: editor.getContent(),
+          activeElement: document.activeElement,
+          editorFocused: editor.hasFocus(),
+          currentSelection: {
+            range: editor.selection.getRng(),
+            startContainer: editor.selection.getRng().startContainer,
+            startOffset: editor.selection.getRng().startOffset,
+            collapsed: editor.selection.isCollapsed()
           }
+        });
+        
+        // Find our marker
+        const marker = editor.dom.get('temp-cursor-fix');
+        if (marker) {
+          // Log marker details
+          console.log('DEBUG - Marker details:', {
+            markerNode: marker,
+            parentNode: marker.parentNode,
+            previousSibling: marker.previousSibling ? {
+              nodeName: marker.previousSibling.nodeName,
+              nodeType: marker.previousSibling.nodeType,
+              textContent: marker.previousSibling.nodeType === Node.TEXT_NODE ? marker.previousSibling.textContent : null
+            } : null,
+            nextSibling: marker.nextSibling ? {
+              nodeName: marker.nextSibling.nodeName,
+              nodeType: marker.nextSibling.nodeType,
+              textContent: marker.nextSibling.nodeType === Node.TEXT_NODE ? marker.nextSibling.textContent : null
+            } : null
+          });
+          
+          // Place cursor right BEFORE the marker (which will be after the space)
+          const markerRange = editor.dom.createRng();
+          markerRange.setStartBefore(marker);
+          markerRange.setEndBefore(marker);
+          editor.selection.setRng(markerRange);
+          
+          // Remove the marker
+          editor.dom.remove(marker);
+          
+          // Log cursor position after marker positioning
+          console.log('DEBUG - Cursor position after marker positioning:', {
+            startContainer: editor.selection.getRng().startContainer,
+            startOffset: editor.selection.getRng().startOffset,
+            endContainer: editor.selection.getRng().endContainer,
+            endOffset: editor.selection.getRng().endOffset,
+            collapsed: editor.selection.isCollapsed()
+          });
+        } else {
+          console.warn('DEBUG - Marker not found after insertion');
         }
         
-        // Set cursor position after the variant
-        const cursorRange = editor.dom.createRng();
-        cursorRange.setStart(variantInsertionNode, newPosition);
-        cursorRange.setEnd(variantInsertionNode, newPosition);
-        editor.selection.setRng(cursorRange);
+        // Force focus to ensure cursor is visible
+        editor.focus();
+        
+        // Log cursor position after forcing focus
+        console.log('DEBUG - Cursor position after force focus:', {
+          startContainer: editor.selection.getRng().startContainer,
+          startOffset: editor.selection.getRng().startOffset,
+          editorHtml: editor.getContent(),
+          activeElement: document.activeElement,
+          editorFocused: editor.hasFocus()
+        });
+        
+        // Debug log for final position
+        const finalPosition = editor.selection.getRng();
+        console.log('Final position after direct DOM positioning:', {
+          startContainer: finalPosition.startContainer,
+          startOffset: finalPosition.startOffset,
+          endContainer: finalPosition.endContainer,
+          endOffset: finalPosition.endOffset
+        });
       } else {
         // Fallback: Restore the original selection and insert at current position
         editor.selection.setRng(originalRange);
-        editor.execCommand('mceInsertContent', false, variable);
         
-        // Position cursor after inserted content
-        const newPos = editor.selection.getRng().startOffset;
-        const node = editor.selection.getRng().startContainer;
+        console.log('Using fallback insertion at current cursor position');
         
-        if (node.nodeType === Node.TEXT_NODE) {
-          const textContent = node.textContent || '';
-          const variantEndPos = textContent.indexOf('}}', newPos);
+        // Insert the variable at the current cursor position with a space and marker right after it
+        editor.execCommand('mceInsertContent', false, variable + ' <span id="temp-cursor-fix"></span>');
+        
+        // Find our marker
+        const marker = editor.dom.get('temp-cursor-fix');
+        if (marker) {
+          // Place cursor right before the marker (after the space)
+          const markerRange = editor.dom.createRng();
+          markerRange.setStartBefore(marker);
+          markerRange.setEndBefore(marker);
+          editor.selection.setRng(markerRange);
           
-          if (variantEndPos !== -1) {
-            const cursorRange = editor.dom.createRng();
-            cursorRange.setStart(node, variantEndPos + 2);
-            cursorRange.setEnd(node, variantEndPos + 2);
-            editor.selection.setRng(cursorRange);
-          }
+          // Remove the marker
+          editor.dom.remove(marker);
         }
+        
+        // Force focus to ensure cursor is visible
+        editor.focus();
       }
       
       // Notify TinyMCE that content has changed
@@ -357,83 +527,51 @@ export const setupMentionPlugin = (editor: TinyMCEEditor) => {
     
     try {
       const editorFrame = editor.iframeElement;
+      if (!editorFrame) return;
       
-      if (!editorFrame) {
-        console.error('Editor iframe not found');
-        return;
-      }
-      
-      // Get iframe's document context
-      const editorDoc = editor.getDoc();
+      const editorDocument = editor.getDoc();
       const editorWin = editor.getWin();
       
-      // Create a range at the position where the popover should appear
-      const range = editorDoc.createRange();
+      if (!editorDocument || !editorWin) return;
+      
+      // Create a range to position our popover
+      const range = editorDocument.createRange();
       range.setStart(textNode, cursorPosition);
-      range.setEnd(textNode, cursorPosition);
+      range.collapse(true);
       
-      // Store the selection position for later restoration
-      const bookmark = editor.selection.getBookmark();
+      // Get the position relative to the viewport
+      const rangeRect = range.getBoundingClientRect();
       
-      // Update selection range in the editor
-      const editorSelection = editorWin.getSelection();
-      if (editorSelection) {
-        editorSelection.removeAllRanges();
-        editorSelection.addRange(range);
-      }
-      
-      // Get relative position inside iframe
-      const rangeRects = range.getClientRects();
-      if (!rangeRects || rangeRects.length === 0) {
-        console.error('Range has no client rects');
-        // Try to restore selection
-        editor.selection.moveToBookmark(bookmark);
-        return;
-      }
-      
-      // Calculate absolute position relative to the viewport
-      const rangeRect = rangeRects[0];
+      // Get the iframe's position relative to the window
       const iframeRect = editorFrame.getBoundingClientRect();
       
-      // Account for iframe scroll position
-      const scrollX = editorWin.scrollX || editorWin.pageXOffset;
-      const scrollY = editorWin.scrollY || editorWin.pageYOffset;
+      // Calculate absolute position (iframe position + position within iframe)
+      const absoluteLeft = iframeRect.left + rangeRect.left + editorWin.scrollX;
+      const absoluteTop = iframeRect.top + rangeRect.top + editorWin.scrollY;
       
-      const popoverTop = iframeRect.top + rangeRect.bottom + scrollY;
-      const popoverLeft = iframeRect.left + rangeRect.left + scrollX;
+      // Create a container for our popover
+      popoverContainer = document.createElement('div');
+      popoverContainer.style.position = 'absolute';
+      popoverContainer.style.zIndex = '1000';
+      // We'll position this through Polaris portal popover
       
-      // Create activator element for popover positioning
+      // Create an activator element for Polaris Popover
       activatorEl = document.createElement('div');
-      activatorEl.className = 'mention-activator';
       activatorEl.style.position = 'absolute';
-      activatorEl.style.top = `${popoverTop}px`;
-      activatorEl.style.left = `${popoverLeft}px`;
-      activatorEl.style.width = '4px';
-      activatorEl.style.height = '4px';
-      activatorEl.style.pointerEvents = 'none';
-      activatorEl.style.zIndex = '9900';
-      
+      activatorEl.style.top = `${absoluteTop}px`;
+      activatorEl.style.left = `${absoluteLeft}px`;
+      activatorEl.style.width = '1px';
+      activatorEl.style.height = '1px';
       document.body.appendChild(activatorEl);
       
-      // Create container for the React popover
-      popoverContainer = document.createElement('div');
-      popoverContainer.className = 'mention-popover-container';
-      popoverContainer.style.position = 'absolute';
-      popoverContainer.style.zIndex = '9999';
-      popoverContainer.style.left = '0';
-      popoverContainer.style.top = '0';
-      popoverContainer.style.width = '100%';
-      popoverContainer.style.height = '0';
-      popoverContainer.style.overflow = 'visible';
-      
-      // Prevent click events from bubbling up to document
-      popoverContainer.addEventListener('mousedown', (e) => {
-        e.stopPropagation();
-      });
-      
+      // Append the popover container to the body
       document.body.appendChild(popoverContainer);
       
-      // Render React popover component
+      // Set up event listeners
+      document.addEventListener('click', handleClickOutside);
+      document.addEventListener('keydown', handleEscapeKey);
+      
+      // Render the Popover component
       renderMentionPopover(
         popoverContainer,
         activatorEl,
@@ -442,63 +580,139 @@ export const setupMentionPlugin = (editor: TinyMCEEditor) => {
         removePopover
       );
       
-      // Set flag to indicate popover is showing
       isShowingPopover = true;
-      
-      // Add event listeners for closing popover
-      document.addEventListener('click', handleClickOutside);
-      document.addEventListener('keydown', handleEscapeKey);
-      
-      // Restore original selection to maintain proper cursor position
-      editor.selection.moveToBookmark(bookmark);
-      // Focus the editor again after showing the popover
-      editor.focus();
     } catch (error) {
       console.error('Error showing popover:', error);
-      removePopover();
-    }
-  };
-
-  // Setup event handlers
-  const handleKeyUp = (e: any) => debouncedMentionCheck();
-  editor.on('keyup', handleKeyUp);
-  
-  const handleBlur = (e: any) => {
-    if (!isShowingPopover) return;
-    
-    setTimeout(() => {
-      const activeElement = document.activeElement;
-      if (activeElement && popoverContainer && 
-          (popoverContainer === activeElement || 
-           popoverContainer.contains(activeElement))) {
-        return;
+      // Clean up if there was an error
+      if (popoverContainer && popoverContainer.parentNode) {
+        popoverContainer.parentNode.removeChild(popoverContainer);
+        popoverContainer = null;
       }
       
-      removePopover();
-    }, 50);
+      if (activatorEl && activatorEl.parentNode) {
+        activatorEl.parentNode.removeChild(activatorEl);
+        activatorEl = null;
+      }
+    }
   };
-  editor.on('blur', handleBlur);
+
+  // Set up event handlers for editor events
+  const handleKeyUp = (e: any) => {
+    try {
+      // Log detailed cursor position after key events
+      const selection = editor.selection;
+      const range = selection.getRng();
+      
+      if (range && range.startContainer) {
+        const node = range.startContainer;
+        const textContent = node.nodeType === Node.TEXT_NODE ? node.textContent : null;
+        
+        console.log('DEBUG - Cursor position after key event:', {
+          key: e.key,
+          keyCode: e.keyCode,
+          startContainer: range.startContainer,
+          startOffset: range.startOffset,
+          endContainer: range.endContainer,
+          endOffset: range.endOffset,
+          nodeType: node.nodeType,
+          nodeName: node.nodeName,
+          parentNodeName: node.parentNode ? node.parentNode.nodeName : null,
+          textContent: textContent,
+          isElement: node.nodeType === Node.ELEMENT_NODE,
+          isText: node.nodeType === Node.TEXT_NODE,
+          surroundingText: node.nodeType === Node.TEXT_NODE && textContent ? {
+            before: range.startOffset > 10 ? textContent.substring(range.startOffset - 10, range.startOffset) : textContent.substring(0, range.startOffset),
+            after: textContent.substring(range.startOffset, range.startOffset + 10)
+          } : null
+        });
+      }
+    } catch (error) {
+      console.error('Error in keyup debug logging:', error);
+    }
+    
+    // Run the original debounced check
+    debouncedMentionCheck();
+  };
   
+  // Handle blur events (don't close popover immediately, let click handler do it)
+  const handleBlur = (e: any) => {
+    // Delay to allow click events to process first
+    setTimeout(() => {
+      if (isShowingPopover && popoverContainer) {
+        // Only remove if the click wasn't inside the popover
+        // This is handled by the click handler
+      }
+    }, 100);
+  };
+  
+  // Handle scroll events to reposition popover
   const handleScroll = () => {
     if (isShowingPopover) {
+      // For simplicity, just remove the popover on scroll
       removePopover();
     }
   };
-  editor.on('scroll', handleScroll);
-
-  // Create cleanup function
+  
+  // Clean up event handlers when plugin is removed
   const cleanup = () => {
+    removePopover();
     editor.off('keyup', handleKeyUp);
     editor.off('blur', handleBlur);
     editor.off('scroll', handleScroll);
-    removePopover();
+    editor.off('mouseup', handleMouseUp);
   };
-
-  // Store editor instance
-  const instance = { removePopover, cleanup };
+  
+  // Add event handlers to editor instance
+  editor.on('keyup', handleKeyUp);
+  editor.on('blur', handleBlur);
+  editor.on('scroll', handleScroll);
+  editor.on('mouseup', handleMouseUp); // Add the debug listener
+  
+  // Store the instance handlers in the WeakMap
+  const instance = {
+    removePopover,
+    cleanup
+  };
+  
   editorInstances.set(editor, instance);
-
+  
   return instance;
+};
+
+// Export a standalone function to insert a liquid variable directly
+// This can be useful for external triggers like toolbar buttons
+export const insertLiquidVariableInEditor = (editor: TinyMCEEditor, variable: string): void => {
+  // Focus the editor
+  editor.focus();
+  
+  // Insert the variable at the current cursor position with a space and marker after it
+  editor.execCommand('mceInsertContent', false, variable + ' <span id="temp-cursor-fix"></span>');
+  
+  // Find our marker
+  const marker = editor.dom.get('temp-cursor-fix');
+  if (marker) {
+    // Place cursor right before the marker (after the space)
+    const markerRange = editor.dom.createRng();
+    markerRange.setStartBefore(marker);
+    markerRange.setEndBefore(marker);
+    editor.selection.setRng(markerRange);
+    
+    // Remove the marker
+    editor.dom.remove(marker);
+  }
+  
+  // Force focus to ensure cursor is visible
+  editor.focus();
+  
+  // Ensure editor knows content has changed
+  editor.nodeChanged();
+  
+  // Update liquid syntax highlighting if available
+  setTimeout(() => {
+    if (typeof (editor.plugins as any).liquid?.decorateLiquidSyntax === 'function') {
+      (editor.plugins as any).liquid.decorateLiquidSyntax(true);
+    }
+  }, 150);
 };
 
 export default setupMentionPlugin; 
