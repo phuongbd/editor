@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { Popover, ActionList, TextField, EmptySearchResult, Spinner } from '@shopify/polaris';
 
 interface Position {
@@ -13,7 +13,7 @@ interface PortalPopoverProps {
   onClose: () => void;
 }
 
-export const PortalPopover: React.FC<PortalPopoverProps> = ({
+export const PortalPopover: React.FC<PortalPopoverProps> = memo(({
   position,
   variables,
   onSelect,
@@ -24,6 +24,7 @@ export const PortalPopover: React.FC<PortalPopoverProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const activatorRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<number | null>(null);
   
   // Always show the popover
   const [popoverActive, setPopoverActive] = useState(true);
@@ -42,33 +43,46 @@ export const PortalPopover: React.FC<PortalPopoverProps> = ({
       e.stopPropagation();
     };
 
-    if (containerRef.current) {
-      containerRef.current.addEventListener('mousedown', handler);
-      containerRef.current.addEventListener('touchstart', handler);
-      containerRef.current.addEventListener('click', handler);
+    const containerEl = containerRef.current;
+    if (containerEl) {
+      containerEl.addEventListener('mousedown', handler);
+      containerEl.addEventListener('touchstart', handler);
+      containerEl.addEventListener('click', handler);
     }
 
     return () => {
-      if (containerRef.current) {
-        containerRef.current.removeEventListener('mousedown', handler);
-        containerRef.current.removeEventListener('touchstart', handler);
-        containerRef.current.removeEventListener('click', handler);
+      if (containerEl) {
+        containerEl.removeEventListener('mousedown', handler);
+        containerEl.removeEventListener('touchstart', handler);
+        containerEl.removeEventListener('click', handler);
       }
     };
   }, []);
 
-  // Filter variables based on search input
+  // Filter variables based on search input - with proper cleanup
   useEffect(() => {
     setIsLoading(true);
-    const timer = setTimeout(() => {
+    
+    // Clear any existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = window.setTimeout(() => {
       const filtered = variables.filter(variable => 
         variable.toLowerCase().includes(searchValue.toLowerCase())
       );
       setFilteredVariables(filtered);
       setIsLoading(false);
+      searchTimeoutRef.current = null;
     }, 100); // Small delay for better UX
 
-    return () => clearTimeout(timer);
+    // Cleanup on unmount or when searchValue/variables change
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [searchValue, variables]);
 
   const handleSearchChange = useCallback((value: string) => {
@@ -84,8 +98,8 @@ export const PortalPopover: React.FC<PortalPopoverProps> = ({
     onClose();
   }, [onClose]);
 
-  // Custom activator that is positioned at the cursor
-  const activator = (
+  // Custom activator that is positioned at the cursor - memoized to prevent recreation
+  const activator = useMemo(() => (
     <div 
       ref={activatorRef}
       style={{ 
@@ -97,10 +111,10 @@ export const PortalPopover: React.FC<PortalPopoverProps> = ({
         padding: 0
       }}
     />
-  );
+  ), [position.top, position.left]);
 
-  // Create the popover content
-  const popoverContent = (
+  // Create the popover content - memoized to prevent recreation
+  const popoverContent = useMemo(() => (
     <div
       ref={containerRef}
       style={{ 
@@ -144,7 +158,7 @@ export const PortalPopover: React.FC<PortalPopoverProps> = ({
         )}
       </div>
     </div>
-  );
+  ), [searchValue, isLoading, filteredVariables, handleSearchChange, handleSelectVariable]);
 
   return (
     <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
@@ -163,6 +177,9 @@ export const PortalPopover: React.FC<PortalPopoverProps> = ({
       </Popover>
     </div>
   );
-};
+});
+
+// Add displayName for better debugging
+PortalPopover.displayName = 'PortalPopover';
 
 export default PortalPopover; 

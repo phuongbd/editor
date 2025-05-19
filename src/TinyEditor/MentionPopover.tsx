@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, memo, useMemo } from 'react';
 import { Popover, ActionList, TextField, EmptySearchResult, Spinner, TextContainer } from '@shopify/polaris';
 
 interface MentionPopoverProps {
@@ -7,7 +7,7 @@ interface MentionPopoverProps {
   onClose: () => void;
 }
 
-export const MentionPopover: React.FC<MentionPopoverProps> = ({
+export const MentionPopover: React.FC<MentionPopoverProps> = memo(({
   variables,
   onSelect,
   onClose,
@@ -16,6 +16,8 @@ export const MentionPopover: React.FC<MentionPopoverProps> = ({
   const [filteredVariables, setFilteredVariables] = useState<string[]>(variables);
   const [isLoading, setIsLoading] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const activatorRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<number | null>(null);
   
   // Always show the popover
   const [popoverActive, setPopoverActive] = useState(true);
@@ -26,31 +28,44 @@ export const MentionPopover: React.FC<MentionPopoverProps> = ({
       e.stopPropagation();
     };
 
-    if (containerRef.current) {
-      containerRef.current.addEventListener('mousedown', handler);
-      containerRef.current.addEventListener('click', handler);
+    const containerEl = containerRef.current;
+    if (containerEl) {
+      containerEl.addEventListener('mousedown', handler);
+      containerEl.addEventListener('click', handler);
     }
 
     return () => {
-      if (containerRef.current) {
-        containerRef.current.removeEventListener('mousedown', handler);
-        containerRef.current.removeEventListener('click', handler);
+      if (containerEl) {
+        containerEl.removeEventListener('mousedown', handler);
+        containerEl.removeEventListener('click', handler);
       }
     };
   }, []);
 
-  // Filter variables based on search input
+  // Filter variables based on search input - with proper cleanup
   useEffect(() => {
     setIsLoading(true);
-    const timer = setTimeout(() => {
+    
+    // Clear any existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = window.setTimeout(() => {
       const filtered = variables.filter(variable => 
         variable.toLowerCase().includes(searchValue.toLowerCase())
       );
       setFilteredVariables(filtered);
       setIsLoading(false);
+      searchTimeoutRef.current = null;
     }, 100); // Small delay for better UX
 
-    return () => clearTimeout(timer);
+    // Cleanup on unmount or when searchValue/variables change
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, [searchValue, variables]);
 
   const handleSearchChange = useCallback((value: string) => {
@@ -58,7 +73,13 @@ export const MentionPopover: React.FC<MentionPopoverProps> = ({
   }, []);
 
   const handleSelectVariable = useCallback((variable: string) => {
-    onSelect(variable);
+    // Log để debug
+    console.log('Variable selected, inserting at current cursor position:', variable);
+    
+    // Delay 1 tick để React hoàn thành xử lý sự kiện
+    setTimeout(() => {
+      onSelect(variable);
+    }, 0);
   }, [onSelect]);
 
   const handleClose = useCallback(() => {
@@ -66,17 +87,8 @@ export const MentionPopover: React.FC<MentionPopoverProps> = ({
     onClose();
   }, [onClose]);
 
-  // We need to create a React element as activator, not use the DOM element directly
-  // Create a custom activator component
-  const CustomActivator = useCallback(() => {
-    // Find the element that was created by the Portal
-    const activatorElement = document.getElementById('mention-popover-activator');
-    // Return an empty div if the element isn't found
-    return <div id="mention-popover-activator-wrapper" />;
-  }, []);
-
-  // Create the popover content
-  const popoverContent = (
+  // Create the popover content - memoized to prevent recreation
+  const popoverContent = useMemo(() => (
     <div
       ref={containerRef}
       style={{ 
@@ -121,24 +133,24 @@ export const MentionPopover: React.FC<MentionPopoverProps> = ({
         )}
       </div>
     </div>
-  );
+  ), [searchValue, isLoading, filteredVariables, handleSearchChange, handleSelectVariable]);
 
-  // Use a reference to an activator element that will be positioned 
-  // correctly by the PortalActivator in MentionPopoverRenderer
-  const activatorRef = useRef<HTMLDivElement>(null);
+  // Memoize the activator element
+  const activator = useMemo(() => (
+    <div
+      ref={activatorRef}
+      id="mention-popover-activator-wrapper"
+      style={{ position: 'absolute', visibility: 'hidden' }}
+    />
+  ), []);
 
   return (
     <>
-      {/* This is a hidden div that serves as the activator */}
-      <div
-        ref={activatorRef}
-        id="mention-popover-activator-wrapper"
-        style={{ position: 'absolute', visibility: 'hidden' }}
-      />
+      {activator}
       
       <Popover
         active={popoverActive}
-        activator={activatorRef.current || <div></div>}
+        activator={activator}
         onClose={handleClose}
         preferredPosition="below"
         preferredAlignment="left"
@@ -150,6 +162,9 @@ export const MentionPopover: React.FC<MentionPopoverProps> = ({
       </Popover>
     </>
   );
-};
+});
+
+// Add displayName for better debugging
+MentionPopover.displayName = 'MentionPopover';
 
 export default MentionPopover; 
