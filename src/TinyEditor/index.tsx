@@ -1,61 +1,71 @@
 import { Editor } from '@tinymce/tinymce-react';
-import React, { useCallback, useMemo } from 'react';
-import { createEditorSetup, getEditorInitConfig, TinyEditorSetupOptions } from './TinyEditorSetup';
+import React, { useCallback, useEffect, useMemo } from 'react';
+import { createEditorSetup, TinyEditorSetupOptions } from './TinyEditorSetup';
+import type { Editor as TinyMCEEditor } from 'tinymce';
+import { InitOptions } from '@tinymce/tinymce-react/lib/cjs/main/ts/components/Editor';
 
 export interface TinyEditorProps extends TinyEditorSetupOptions {
-  initialValue: string;
+  value: string;
+  valueDefault: string;
   onChange: (content: string) => void;
   disabled?: boolean;
   id?: string;
+  onFocus?: () => void;
+  onBlur?: () => void;
+  init: {
+    setup?: (editor: TinyMCEEditor) => void;
+    [key: string]: any;
+  };
 }
 
-// Track editor instances to prevent duplicate setup
 const editorInstances = new Set<string>();
 
-const TinyEditor: React.FC<TinyEditorProps> = React.memo(({
-  initialValue = '',
+const TinyEditor = ({
+  init,
+  onFocus,
+  onBlur,
+  value = '',
+  valueDefault = '',
   onChange,
-  height = 500,
   disabled = false,
   id = 'tiny-editor',
   liquidSupport = false,
   mentionSupport = false,
-  ...restProps
-}) => {
-  // Create unique instance ID if not provided
+}: TinyEditorProps) => {
+  const { setup: initSetup, ...restInit } = init;
   const editorId = useMemo(() => id || `tiny-editor-${Math.random().toString(36).substring(2, 9)}`, [id]);
-  
-  // Create setup function with memoization to prevent recreation on every render
-  const setup = useMemo(() => 
-    createEditorSetup({ height, liquidSupport, mentionSupport })
-  , [height, liquidSupport, mentionSupport]);
-  
-  // Get base configuration with memoization
-  const init = useMemo(() => ({
-    ...getEditorInitConfig({ height, liquidSupport }),
-    setup,
-    ...restProps
-  }), [height, liquidSupport, setup, restProps]);
 
-  // Memoize the change handler to prevent unnecessary re-renders
-  const handleEditorChange = useCallback((newContent: string) => {
-    onChange?.(newContent);
-  }, [onChange]);
+  const setup = useMemo(
+    () => createEditorSetup({ liquidSupport, mentionSupport, value, valueDefault, setup: initSetup }),
+    [liquidSupport, mentionSupport, value, valueDefault, initSetup]
+  );
 
-  // Track editor instance lifecycle
+  const initData = useMemo(
+    () => ({
+      ...restInit,
+      setup,
+    }),
+    [restInit, setup]
+  );
+
+  const handleEditorChange = useCallback(
+    (newContent: string) => {
+      if (disabled) return;
+      onChange?.(newContent);
+    },
+    [onChange, disabled]
+  );
+
   const handleEditorInit = useCallback(() => {
     if (!editorInstances.has(editorId)) {
       editorInstances.add(editorId);
-      console.log(`TinyEditor instance ${editorId} initialized`);
     }
   }, [editorId]);
 
-  // Clean up editor instance when component unmounts
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       if (editorInstances.has(editorId)) {
         editorInstances.delete(editorId);
-        console.log(`TinyEditor instance ${editorId} cleaned up`);
       }
     };
   }, [editorId]);
@@ -65,16 +75,17 @@ const TinyEditor: React.FC<TinyEditorProps> = React.memo(({
       scriptLoading={{ async: true }}
       id={editorId}
       tinymceScriptSrc="/tinymce/tinymce.min.js"
-      value={initialValue}
-      init={init}
+      value={value}
+      init={initData}
       onEditorChange={handleEditorChange}
       onInit={handleEditorInit}
+      onFocus={disabled ? undefined : onFocus}
+      onBlur={disabled ? undefined : onBlur}
       disabled={disabled}
     />
   );
-});
+};
 
-// Add displayName for better debugging
 TinyEditor.displayName = 'TinyEditor';
 
-export default TinyEditor;
+export default React.memo(TinyEditor);
