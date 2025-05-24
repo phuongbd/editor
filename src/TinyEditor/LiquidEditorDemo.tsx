@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import TinyEditor from "./index";
 import { Button, Page, Layout, Card, Text, BlockStack } from "@shopify/polaris";
 import { initDefault } from "./config";
@@ -11,12 +11,31 @@ const LiquidEditorDemo: React.FC = () => {
   const { applyImageErrorHandling } = useHandleErrorImage();
   const editorInstanceId = useRef<string>(`tiny-editor-${Math.random().toString(36).substring(2, 9)}`);
   const [value, setValue] = useState<string>(fakeValue);
-
   const [valueDefault, setValueDefault] = useState<string>(fakeValue);
+  const isInitialized = useRef<boolean>(false);
+
+  useEffect(() => {
+    // Log initial values
+    console.log('Initial fakeValue:', fakeValue);
+    console.log('Initial value state:', value);
+    console.log('Initial valueDefault state:', valueDefault);
+  }, []);
 
   const handleEditorChange = (content: string) => {
-    console.log(11111111, content);
-    setValue(content);
+    if (!isInitialized.current) {
+      console.log('Initial editor content:', content);
+      isInitialized.current = true;
+      // Clean up the initial content to preserve Liquid tags
+      const cleanedContent = cleanHtmlUseTinyEditor(content);
+      console.log('Cleaned initial content:', cleanedContent);
+      setValue(cleanedContent);
+      return;
+    }
+    
+    // Clean up content before updating state
+    const cleanedContent = cleanHtmlUseTinyEditor(content);
+    console.log('Editor content after change:', cleanedContent);
+    setValue(cleanedContent);
   };
 
   return (
