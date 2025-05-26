@@ -3,12 +3,17 @@ import { DEFAULT_IMAGE_URL } from './constants';
 
 const liquidVariableRegex = /(\{\{\s*[^{}]+?\s*\}\})/g;
 const highlightedVariableRegex = /<span[^>]*?class="liquid-variable"[^>]*?>(.*?)<\/span>/gi;
+const liquidControlFlowTagRegex = /(\{%-?\s*.*?\s*-?%\})/g;
 
 const attributeRegex = /<[^>]+?(\w+\s*=\s*['"])[^'"]*?\{\{.*?(['"])/g;
 const styleAttributeRegex = /style\s*=\s*['"](.*?)['"]/g;
 const scriptTagRegex = /<script[^>]*?>[\s\S]*?<\/script>/gi;
 const styleTagRegex = /<style[^>]*?>[\s\S]*?<\/style>/gi;
 const imgTagRegex = /<img\s+[^>]*?>/gi;
+
+// Define a more specific and permanent comment format for LCF tags
+const LCF_PERMANENT_COMMENT_START = '<!--LCF_TAG_START%';
+const LCF_PERMANENT_COMMENT_END = '%LCF_TAG_END-->';
 
 interface LiquidPlugin {
   decorateLiquidSyntax: (forceSetCursor?: boolean) => void;
@@ -30,6 +35,18 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
     content: string;
     timestamp: number;
   } | null = null;
+
+  // Convert {% ... %} tags to permanent comments before TinyMCE processes the content
+  editor.on('BeforeSetContent', (e) => {
+    if (e.content && typeof e.content === 'string') {
+      // console.log('[LiquidPlugin] BeforeSetContent - original e.content:', JSON.stringify(e.content));
+      e.content = e.content.replace(liquidControlFlowTagRegex, (match) => {
+        // console.log('[LiquidPlugin] BeforeSetContent - replacing LCF match:', match);
+        return `${LCF_PERMANENT_COMMENT_START}${match}${LCF_PERMANENT_COMMENT_END}`;
+      });
+      // console.log('[LiquidPlugin] BeforeSetContent - modified e.content:', JSON.stringify(e.content));
+    }
+  });
 
   // Add CSS for Liquid syntax highlighting, img default
   editor.on('init', () => {
@@ -61,19 +78,19 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
     const styleElement = editor.dom.create('style', { type: 'text/css' }, css);
     editor.getDoc().head.appendChild(styleElement);
 
-    // Initial decoration after editor is fully loaded - only once
     setTimeout(() => {
-      const content = editor.getContent();
-      const decoratedContent = decorateContent(content);
-
-      // Only set if there's a difference to avoid cursor jumps
-      if (content !== decoratedContent) {
-        // Use silent mode to prevent firing change events
-        editor.setContent(decoratedContent, { no_events: true });
+      // console.log('[LiquidPlugin] Initial decoration timeout fired.');
+      const initialContentInEditor = editor.getContent();
+      // console.log('[LiquidPlugin] Initial content for decoration:', JSON.stringify(initialContentInEditor));
+      const decoratedInitialContent = decorateContent(initialContentInEditor);
+      // console.log('[LiquidPlugin] Decorated initial content:', JSON.stringify(decoratedInitialContent));
+      
+      if (initialContentInEditor !== decoratedInitialContent) {
+        // console.log('[LiquidPlugin] Setting decorated initial content.');
+        editor.setContent(decoratedInitialContent, { no_events: true });
       }
-
       applyImageErrorHandling();
-    }, 500);
+    }, 1000); // Increased timeout to 1000ms
   });
 
   // Function to handle delete keypress
@@ -249,62 +266,45 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
 
   // Function to decorate content with spans, ngăn chặn span lồng nhau
   const decorateContent = (content: string): string => {
-    // Quick check if no liquid syntax to avoid processing
-    if (!content.includes('{{') && !content.includes('{%')) {
+    // This function expects content where LCF tags might already be comments.
+    // It only focuses on {{...}} variables.
+    if (!content.includes('{{')) { // Only need to check for variables now for this specific function
       return content;
     }
 
-    // Bước 1: Trích xuất và thay thế các span đã được highlight
     const extractedVariables: string[] = [];
-
-    // Thay thế các span đã được highlight với placeholder
     let processedContent = content.replace(highlightedVariableRegex, (match, innerContent) => {
-      // Trích xuất nội dung bên trong span
       extractedVariables.push(innerContent);
       return `__EXISTING_LIQUID_VAR_${extractedVariables.length - 1}__`;
     });
 
-    // Bước 2: Tìm và thay thế các biến liquid chưa được highlight
     const liquidVariablePlaceholders: string[] = [];
-
-          // Reset regex before use
-      liquidVariableRegex.lastIndex = 0;
-
-      // Find all variable matches
-      let match;
-      while ((match = liquidVariableRegex.exec(processedContent)) !== null) {
-        // Only add to placeholders if should be highlighted
-        if (shouldHighlight(processedContent, match)) {
-          liquidVariablePlaceholders.push(match[0]);
-          const placeholder = `__NEW_LIQUID_VAR_${liquidVariablePlaceholders.length - 1}__`;
-
-          // Replace this specific occurrence
-          const beforeMatch = processedContent.substring(0, match.index);
-          const afterMatch = processedContent.substring(match.index + match[0].length);
-          processedContent = beforeMatch + placeholder + afterMatch;
-
-          // Reset regex since we modified the string
-          liquidVariableRegex.lastIndex = beforeMatch.length + placeholder.length;
-        }
+    liquidVariableRegex.lastIndex = 0;
+    let match;
+    while ((match = liquidVariableRegex.exec(processedContent)) !== null) {
+      if (shouldHighlight(processedContent, match)) {
+        liquidVariablePlaceholders.push(match[0]);
+        const placeholder = `__NEW_LIQUID_VAR_${liquidVariablePlaceholders.length - 1}__`;
+        const beforeMatch = processedContent.substring(0, match.index);
+        const afterMatch = processedContent.substring(match.index + match[0].length);
+        processedContent = beforeMatch + placeholder + afterMatch;
+        liquidVariableRegex.lastIndex = beforeMatch.length + placeholder.length;
       }
+    }
 
-    // Bước 3: Khôi phục tất cả các placeholder
-
-    // Khôi phục các span đã tồn tại
-    extractedVariables.forEach((content, index) => {
+    extractedVariables.forEach((extractedVarContent, index) => {
       const placeholder = `__EXISTING_LIQUID_VAR_${index}__`;
       processedContent = processedContent.replace(
         placeholder,
-        `<span class="liquid-variable" data-liquid="true" data-liquid-type="variable" contenteditable="false">${content}</span>`
+        `<span class="liquid-variable" data-liquid="true" data-liquid-type="variable" contenteditable="false">${extractedVarContent}</span>`
       );
     });
 
-    // Highlight các biến liquid mới
-    liquidVariablePlaceholders.forEach((content, index) => {
+    liquidVariablePlaceholders.forEach((placeholderContent, index) => {
       const placeholder = `__NEW_LIQUID_VAR_${index}__`;
       processedContent = processedContent.replace(
         placeholder,
-        `<span class="liquid-variable" data-liquid="true" data-liquid-type="variable" contenteditable="false">${content}</span>`
+        `<span class="liquid-variable" data-liquid="true" data-liquid-type="variable" contenteditable="false">${placeholderContent}</span>`
       );
     });
 
@@ -313,37 +313,26 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
 
   // Function to apply decorations to Liquid syntax with improved cursor handling
   const decorateLiquidSyntax = (forceSetCursor = false) => {
-    // Prevent recursion
     if (isDecorating) return;
-
     isDecorating = true;
-
     try {
-      // Store cursor position using TinyMCE bookmarks
       const bookmark = forceSetCursor ? editor.selection.getBookmark(2, true) : null;
+      // Content in the editor body already has LCF tags as comments due to 'BeforeSetContent' on any setContent call.
+      const currentEditorContent = editor.getBody().innerHTML;
+      const decoratedContent = decorateContent(currentEditorContent);
 
-      // Get current content
-      const content = editor.getContent();
-
-      // Apply decorations
-      const decoratedContent = decorateContent(content);
-
-      // Only set if there's a difference to avoid cursor jumps
-      if (content !== decoratedContent) {
-        // Use "silent" mode to prevent triggering change events
+      if (currentEditorContent !== decoratedContent) {
+        // This setContent will also go through 'BeforeSetContent'.
+        // Since LCF tags are already comments, and decorateContent doesn't change them,
+        // they will pass through BeforeSetContent's replace as unchanged comments.
+        // {{...}} variables will be wrapped, and BeforeSetContent doesn't affect them.
         editor.setContent(decoratedContent, { no_events: true });
-
-        // Restore cursor position if needed
         if (bookmark) {
           editor.selection.moveToBookmark(bookmark);
-          // editor.focus(); // Removing this as it can cause unexpected cursor jumps after restoring a bookmark
         }
       }
-
-      // Apply image error handling after content is set
       applyImageErrorHandling();
     } finally {
-      // Reset flag to allow next decoration
       isDecorating = false;
     }
   };
@@ -384,13 +373,15 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
   // Watch for inserted content
   editor.on('ExecCommand', (e: EditorEvent<ExecCommandEvent>) => {
     if (e.command === 'mceInsertContent' && lastInsertedVariable) {
-      // Add a small delay to let TinyMCE finish its DOM manipulations
       debouncedDecorate(true);
     }
   });
 
   // Apply decorations when content changes
   editor.on('SetContent', () => {
+    // When SetContent is fired, the content inside the editor already has LCF tags
+    // converted to comments by the 'BeforeSetContent' handler.
+    // `decorateContent` will then process this, focusing on `{{...}}` variables.
     if (!isDecorating) {
       debouncedDecorate(false);
     }

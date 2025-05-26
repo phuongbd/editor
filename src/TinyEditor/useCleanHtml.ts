@@ -1,44 +1,46 @@
-const decodeMceProtected = (content: string) => {
-  // Decode both HTML-escaped and raw mce:protected entities
-  return content
-    .replace(/&lt;!--mce:protected\s*(.*?)--&gt;/g, (_, encoded) => {
-      return decodeURIComponent(encoded.replace(/\s+/g, '').replace(/%7B/g, '{').replace(/%7D/g, '}'));
-    })
-    .replace(/<!--mce:protected\s*(.*?)-->/g, (_, encoded) => {
-      return decodeURIComponent(encoded.replace(/\s+/g, '').replace(/%7B/g, '{').replace(/%7D/g, '}'));
-    });
+const LCF_PERMANENT_COMMENT_START_REGEX_ESCAPED = '<!--LCF_TAG_START%';
+const LCF_PERMANENT_COMMENT_END_REGEX_ESCAPED = '%LCF_TAG_END-->';
+
+const escapeRegExp = (string: string): string => {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 };
 
-export const cleanHtmlUseTinyEditor = (content: string) => {
-  if (!content) return '';
+const lcfCommentRegex = new RegExp(
+  escapeRegExp(LCF_PERMANENT_COMMENT_START_REGEX_ESCAPED) +
+  '(\\{%-?\\s*.*?\\s*-?%\\})' + // Capture group 1: the actual Liquid tag
+  escapeRegExp(LCF_PERMANENT_COMMENT_END_REGEX_ESCAPED),
+  'gs' // g for global, s for dotall (to match across newlines if any)
+);
 
-  // First decode any mce:protected content
-  let html = decodeMceProtected(content);
 
+const liquidVariableRegex = /<span[^>]*?class="liquid-variable"[^>]*?>(.*?)<\/span>/gi;
+
+export const cleanHtmlUseTinyEditor = (htmlFromEditor: string): string => {
+  if (typeof htmlFromEditor !== 'string' || !htmlFromEditor) {
+    return '';
+  }
+
+  let cleanedHtml = htmlFromEditor;
+
+  // Step 1: Convert LCF comments back to Liquid control flow tags
+  cleanedHtml = cleanedHtml.replace(lcfCommentRegex, '$1');
+
+  // Step 2: Unwrap Liquid variables from their <span> tags
+  cleanedHtml = cleanedHtml.replace(liquidVariableRegex, '$1');
+
+  // Add any other cleaning steps you might need here
+  // For example, trimming whitespace, removing other editor-specific markup, etc.
   // Handle transcy editor divs
   const editorDivRegex = /<template\s+[^>]*?data-editor-transcy="true"[^>]*?>([\s\S]*?)<\/div>/gi;
-  html = html.replace(editorDivRegex, '$1');
+  cleanedHtml = cleanedHtml.replace(editorDivRegex, '$1');
 
   // Clean up image error handlers
   const cleanImgOnErrorRegex = /<img([^>]*)onerror\s*=\s*(['"])[^>]*?\2([^>]*)>/gi;
-  html = html.replace(cleanImgOnErrorRegex, '<img$1$3>');
+  cleanedHtml = cleanedHtml.replace(cleanImgOnErrorRegex, '<img$1$3>');
 
   const cleanImgOnErrorRegexEnd = /<img([^>]*)onerror\s*=\s*[^>]*?>/gi;
-  html = html.replace(cleanImgOnErrorRegexEnd, '<img$1>');
+  cleanedHtml = cleanedHtml.replace(cleanImgOnErrorRegexEnd, '<img$1>');
 
-  // Clean up liquid variable spans - match all possible attributes
-  const liquidVariableRegex = /<span[^>]*?class="liquid-variable"[^>]*?>(.*?)<\/span>/gi;
-  html = html.replace(liquidVariableRegex, (match, content) => {
-    // Make sure content maintains its original formatting
-    return content.trim();
-  });
-
-  // Clean up liquid tag spans - match all possible attributes
-  const liquidTagRegex = /<span[^>]*?class="liquid-tag"[^>]*?>(.*?)<\/span>/gi;
-  html = html.replace(liquidTagRegex, (match, content) => {
-    // Make sure content maintains its original formatting
-    return content.trim();
-  });
-
-  return html;
+  return cleanedHtml;
 };
+

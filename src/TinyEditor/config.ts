@@ -53,7 +53,6 @@ export const initDefault: any = {
   indent_before: '\n',
   indent_after: '\n',
   block_formats: 'Paragraph=p;Header 1=h1;Header 2=h2;Header 3=h3',
-  custom_elements: '~tc,~transcy,~liquid-if,~liquid-unless,~liquid-case,~liquid-when,~liquid-else',
+  custom_elements: '~tc,~transcy',
   content_css: false,
-  protect: [/({%-?\s*.*?\s*-?%})/g, /({{-?\s*.*?\s*-?}})/g],
 };
