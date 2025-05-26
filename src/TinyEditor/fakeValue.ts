@@ -1,5 +1,10 @@
 export const fakeValue = 
-`<table class="body">
+`Text 123 {{ shop.test }}
+<p>Text new 2 {{ shop.test_email }}</p>
+{%- if shop.email_logo_url %}
+ <p>ABCQ</p>
+{%- endif %}
+<table class="body">
       <tr>
         <td>
           <table class="header row">
@@ -1688,4 +1693,5 @@ export const fakeValue =
         </td>
       </tr>
     </table>
+    Text end {{ shop.test_new }}
 `

@@ -32,13 +32,13 @@ export const initDefault: any = {
   statusbar: false,
   menubar: false,
   toolbar_sticky: false,
-  forced_root_block: 'div',
+  forced_root_block: 'template',
   forced_root_block_attrs: {
     'data-editor-transcy': 'true',
   },
   relative_urls: false,
   convert_urls: false,
-  custom_elements: '~tc,~transcy,~liquid-if,~liquid-unless,~liquid-case,~liquid-when,~liquid-else',
+
   entity_encoding: 'raw',
   plugins:
     'preview searchreplace autolink autosave directionality visualblocks visualchars fullscreen image link media table pagebreak nonbreaking anchor advlist lists wordcount code',
@@ -53,13 +53,7 @@ export const initDefault: any = {
   indent_before: '\n',
   indent_after: '\n',
   block_formats: 'Paragraph=p;Header 1=h1;Header 2=h2;Header 3=h3',
-  extended_valid_elements: '*[*],liquid-if[*],liquid-else[*],liquid-endif[*]',
-  custom_elements: '~liquid-if,~liquid-else,~liquid-endif,~tc,~transcy',
-  valid_children: '+body[liquid-if|liquid-else|liquid-endif|*]',
+  custom_elements: '~tc,~transcy,~liquid-if,~liquid-unless,~liquid-case,~liquid-when,~liquid-else',
   content_css: false,
-  noneditable_class: 'liquid-tag',
-  protect: [
-    /({%-?\s*.*?\s*-?%})/g,
-    /({{-?\s*.*?\s*-?}})/g
-  ]
+  protect: [/({%-?\s*.*?\s*-?%})/g, /({{-?\s*.*?\s*-?}})/g],
 };

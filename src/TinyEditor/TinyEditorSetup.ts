@@ -15,8 +15,6 @@ export const createEditorSetup = (options: TinyEditorSetupOptions = {}) => {
 
   return (editor: TinyMCEEditor) => {
     console.log('Editor initialization - value:', value);
-    console.log('Editor initialization - valueDefault:', valueDefault);
-    console.log('Editor initialization - getContent:', editor.getContent());
 
     if (liquidSupport) {
       setupLiquidPlugin(editor);

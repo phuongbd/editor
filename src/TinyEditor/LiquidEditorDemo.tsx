@@ -3,39 +3,18 @@ import TinyEditor from "./index";
 import { Button, Page, Layout, Card, Text, BlockStack } from "@shopify/polaris";
 import { initDefault } from "./config";
 import useHandleErrorImage from "./useHandleErrorImage";
-import useCleanHtml from "./useCleanHtml";
+import {cleanHtmlUseTinyEditor} from "./useCleanHtml";
 import { fakeValue } from "./fakeValue";
 
 const LiquidEditorDemo: React.FC = () => {
-  const { cleanHtmlUseTinyEditor } = useCleanHtml(); 
   const { applyImageErrorHandling } = useHandleErrorImage();
   const editorInstanceId = useRef<string>(`tiny-editor-${Math.random().toString(36).substring(2, 9)}`);
   const [value, setValue] = useState<string>(fakeValue);
   const [valueDefault, setValueDefault] = useState<string>(fakeValue);
-  const isInitialized = useRef<boolean>(false);
-
-  useEffect(() => {
-    // Log initial values
-    console.log('Initial fakeValue:', fakeValue);
-    console.log('Initial value state:', value);
-    console.log('Initial valueDefault state:', valueDefault);
-  }, []);
 
   const handleEditorChange = (content: string) => {
-    if (!isInitialized.current) {
-      console.log('Initial editor content:', content);
-      isInitialized.current = true;
-      // Clean up the initial content to preserve Liquid tags
-      const cleanedContent = cleanHtmlUseTinyEditor(content);
-      console.log('Cleaned initial content:', cleanedContent);
-      setValue(cleanedContent);
-      return;
-    }
-    
-    // Clean up content before updating state
-    const cleanedContent = cleanHtmlUseTinyEditor(content);
-    console.log('Editor content after change:', cleanedContent);
-    setValue(cleanedContent);
+    console.log('content', content);
+    setValue(content);
   };
 
   return (
@@ -78,8 +57,8 @@ const LiquidEditorDemo: React.FC = () => {
                   valueDefault={valueDefault}
                   disabled={false}
                   onChange={handleEditorChange}
-                  liquidSupport={true}
-                  mentionSupport={true}
+                  liquidSupport={false}
+                  mentionSupport={false}
                 />
               </div>
             </BlockStack>
@@ -88,7 +67,9 @@ const LiquidEditorDemo: React.FC = () => {
         <Layout.Section>
           <Button
             onClick={() => {
-              console.log(cleanHtmlUseTinyEditor(value));
+              const cleanHtml = cleanHtmlUseTinyEditor(value);
+              console.log('cleanHtml', cleanHtml);
+              setValue(cleanHtml);
             }}
           >
             Clean Editor

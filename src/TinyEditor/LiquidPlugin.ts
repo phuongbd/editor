@@ -2,12 +2,9 @@ import { Editor as TinyMCEEditor, EditorEvent } from 'tinymce';
 import { DEFAULT_IMAGE_URL } from './constants';
 
 const liquidVariableRegex = /(\{\{\s*[^{}]+?\s*\}\})/g;
-const liquidTagRegex = /(\{%\s*[^{}]+?\s*%\})/g;
-
 const highlightedVariableRegex = /<span[^>]*?class="liquid-variable"[^>]*?>(.*?)<\/span>/gi;
-const highlightedTagRegex = /<span[^>]*?class="liquid-tag"[^>]*?>(.*?)<\/span>/gi;
 
-const attributeRegex = /<[^>]+?(\w+\s*=\s*['"])[^'"]*?(\{\{|\{%).*?(['"])/g;
+const attributeRegex = /<[^>]+?(\w+\s*=\s*['"])[^'"]*?\{\{.*?(['"])/g;
 const styleAttributeRegex = /style\s*=\s*['"](.*?)['"]/g;
 const scriptTagRegex = /<script[^>]*?>[\s\S]*?<\/script>/gi;
 const styleTagRegex = /<style[^>]*?>[\s\S]*?<\/style>/gi;
@@ -53,10 +50,6 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
         cursor: default;
         text-transform: lowercase;
         display: inline-block;
-        white-space: pre-wrap; /* Preserve whitespace */
-      }
-      .liquid-tag {
-        display: none;
       }
       img[src='/images/default_thumbnail.png'] {
         max-width: 40px;
@@ -68,62 +61,19 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
     const styleElement = editor.dom.create('style', { type: 'text/css' }, css);
     editor.getDoc().head.appendChild(styleElement);
 
-    // Configure the editor to preserve whitespace within Liquid tags
-    editor.on('BeforeSetContent', (e) => {
-      if (typeof e.content !== 'string') return;
-
-      // Preserve exact whitespace in liquid syntax - don't normalize
-      e.content = e.content
-        .replace(liquidVariableRegex, (match) => {
-          // Keep the original match with exact whitespace
-          return match;
-        })
-        .replace(liquidTagRegex, (match) => {
-          // Keep the original match with exact whitespace
-          return match;
-        });
-    });
-
-    // Preserve Liquid syntax when copying text
-    editor.on('copy', (e) => {
-      setTimeout(() => {
-        const clipboardData = e.clipboardData || (window as any).clipboardData;
-        if (!clipboardData) return;
-
-        const originalText = clipboardData.getData('text');
-        if (!originalText) return;
-
-        // Clean up spans from clipboard content
-        const cleanText = originalText
-          .replace(/<span[^>]*?class="liquid-variable"[^>]*?>(.*?)<\/span>/gi, '$1')
-          .replace(/<span[^>]*?class="liquid-tag"[^>]*?>(.*?)<\/span>/gi, '$1');
-
-        if (cleanText !== originalText) {
-          clipboardData.setData('text/plain', cleanText);
-        }
-      }, 0);
-    });
-
-    // Initial decoration after editor is fully loaded - try multiple times to ensure it works
-    const initialDecorationAttempts = () => {
+    // Initial decoration after editor is fully loaded - only once
+    setTimeout(() => {
       const content = editor.getContent();
       const decoratedContent = decorateContent(content);
 
       // Only set if there's a difference to avoid cursor jumps
       if (content !== decoratedContent) {
         // Use silent mode to prevent firing change events
-        editor.undoManager.ignore(() => {
-          editor.setContent(decoratedContent, { no_events: true });
-        });
-
-        // Apply image error handling
-        applyImageErrorHandling();
+        editor.setContent(decoratedContent, { no_events: true });
       }
-    };
 
-    // Try decoration multiple times to ensure it catches all liquid syntax
-    setTimeout(initialDecorationAttempts, 100);
-    setTimeout(initialDecorationAttempts, 500);
+      applyImageErrorHandling();
+    }, 500);
   });
 
   // Function to handle delete keypress
@@ -169,7 +119,7 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
   const handleClick = (e: EditorEvent<MouseEvent>) => {
     const clickTarget = e.target as Element;
 
-    // Check if we clicked on a liquid variable or tag
+    // Check if we clicked on a liquid variable
     if (clickTarget && clickTarget.classList && clickTarget.classList.contains('liquid-variable')) {
       // Prevent default click behavior
       e.preventDefault();
@@ -191,19 +141,14 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
       // If content contains liquid syntax, store for cursor positioning
       const content = e.value as string;
 
-      if (typeof content === 'string') {
-        // Check if content contains liquid variables or tags
-        const hasLiquidVariable = liquidVariableRegex.test(content);
+      if (typeof content === 'string' && liquidVariableRegex.test(content)) {
+        lastInsertedVariable = {
+          content,
+          timestamp: Date.now(),
+        };
 
-        if (hasLiquidVariable) {
-          lastInsertedVariable = {
-            content,
-            timestamp: Date.now(),
-          };
-
-          // Schedule decoration
-          debouncedDecorate(true);
-        }
+        // Schedule decoration
+        debouncedDecorate(true);
       }
     }
   };
@@ -309,71 +254,43 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
       return content;
     }
 
-    // Step 1: Extract existing highlighted spans to avoid double wrapping
+    // Bước 1: Trích xuất và thay thế các span đã được highlight
     const extractedVariables: string[] = [];
-    const extractedTags: string[] = [];
 
-    // Replace already highlighted spans with placeholders
+    // Thay thế các span đã được highlight với placeholder
     let processedContent = content.replace(highlightedVariableRegex, (match, innerContent) => {
-      // Extract content inside span
+      // Trích xuất nội dung bên trong span
       extractedVariables.push(innerContent);
       return `__EXISTING_LIQUID_VAR_${extractedVariables.length - 1}__`;
     });
 
-    processedContent = processedContent.replace(highlightedTagRegex, (match, innerContent) => {
-      extractedTags.push(innerContent);
-      return `__EXISTING_LIQUID_TAG_${extractedTags.length - 1}__`;
-    });
+    // Bước 2: Tìm và thay thế các biến liquid chưa được highlight
+    const liquidVariablePlaceholders: string[] = [];
 
-    // Step 2: Find and replace liquid syntax that's not yet highlighted
-    const newLiquidVariables: string[] = [];
-    const newLiquidTags: string[] = [];
+          // Reset regex before use
+      liquidVariableRegex.lastIndex = 0;
 
-    // Reset regex before use
-    liquidVariableRegex.lastIndex = 0;
-    liquidTagRegex.lastIndex = 0;
+      // Find all variable matches
+      let match;
+      while ((match = liquidVariableRegex.exec(processedContent)) !== null) {
+        // Only add to placeholders if should be highlighted
+        if (shouldHighlight(processedContent, match)) {
+          liquidVariablePlaceholders.push(match[0]);
+          const placeholder = `__NEW_LIQUID_VAR_${liquidVariablePlaceholders.length - 1}__`;
 
-    // Process liquid variables
-    let match;
-    while ((match = liquidVariableRegex.exec(processedContent)) !== null) {
-      // Only add to array if should be highlighted
-      if (shouldHighlight(processedContent, match)) {
-        newLiquidVariables.push(match[0]);
-        const placeholder = `__NEW_LIQUID_VAR_${newLiquidVariables.length - 1}__`;
+          // Replace this specific occurrence
+          const beforeMatch = processedContent.substring(0, match.index);
+          const afterMatch = processedContent.substring(match.index + match[0].length);
+          processedContent = beforeMatch + placeholder + afterMatch;
 
-        // Replace this specific occurrence
-        const beforeMatch = processedContent.substring(0, match.index);
-        const afterMatch = processedContent.substring(match.index + match[0].length);
-        processedContent = beforeMatch + placeholder + afterMatch;
-
-        // Reset regex since we modified the string
-        liquidVariableRegex.lastIndex = beforeMatch.length + placeholder.length;
+          // Reset regex since we modified the string
+          liquidVariableRegex.lastIndex = beforeMatch.length + placeholder.length;
+        }
       }
-    }
 
-    // Reset regex for tags
-    liquidTagRegex.lastIndex = 0;
+    // Bước 3: Khôi phục tất cả các placeholder
 
-    // Process liquid tags
-    while ((match = liquidTagRegex.exec(processedContent)) !== null) {
-      // Only add to array if should be highlighted
-      if (shouldHighlight(processedContent, match)) {
-        newLiquidTags.push(match[0]);
-        const placeholder = `__NEW_LIQUID_TAG_${newLiquidTags.length - 1}__`;
-
-        // Replace this specific occurrence
-        const beforeMatch = processedContent.substring(0, match.index);
-        const afterMatch = processedContent.substring(match.index + match[0].length);
-        processedContent = beforeMatch + placeholder + afterMatch;
-
-        // Reset regex since we modified the string
-        liquidTagRegex.lastIndex = beforeMatch.length + placeholder.length;
-      }
-    }
-
-    // Step 3: Restore all placeholders with proper spans
-
-    // Restore existing variable spans
+    // Khôi phục các span đã tồn tại
     extractedVariables.forEach((content, index) => {
       const placeholder = `__EXISTING_LIQUID_VAR_${index}__`;
       processedContent = processedContent.replace(
@@ -382,30 +299,12 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
       );
     });
 
-    // Restore existing tag spans
-    extractedTags.forEach((content, index) => {
-      const placeholder = `__EXISTING_LIQUID_TAG_${index}__`;
-      processedContent = processedContent.replace(
-        placeholder,
-        `<span class="liquid-tag" data-liquid="true" data-liquid-type="tag" contenteditable="false">${content}</span>`
-      );
-    });
-
-    // Add spans to new liquid variables
-    newLiquidVariables.forEach((content, index) => {
+    // Highlight các biến liquid mới
+    liquidVariablePlaceholders.forEach((content, index) => {
       const placeholder = `__NEW_LIQUID_VAR_${index}__`;
       processedContent = processedContent.replace(
         placeholder,
         `<span class="liquid-variable" data-liquid="true" data-liquid-type="variable" contenteditable="false">${content}</span>`
-      );
-    });
-
-    // Add spans to new liquid tags
-    newLiquidTags.forEach((content, index) => {
-      const placeholder = `__NEW_LIQUID_TAG_${index}__`;
-      processedContent = processedContent.replace(
-        placeholder,
-        `<span class="liquid-tag" data-liquid="true" data-liquid-type="tag" contenteditable="false">${content}</span>`
       );
     });
 
@@ -414,76 +313,37 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
 
   // Function to apply decorations to Liquid syntax with improved cursor handling
   const decorateLiquidSyntax = (forceSetCursor = false) => {
-    // Skip if already decorating to prevent recursion
-    if (isDecorating) {
-      return;
-    }
+    // Prevent recursion
+    if (isDecorating) return;
 
     isDecorating = true;
 
     try {
-      // Save cursor position
-      const bookmark = editor.selection.getBookmark(2);
+      // Store cursor position using TinyMCE bookmarks
+      const bookmark = forceSetCursor ? editor.selection.getBookmark(2, true) : null;
 
       // Get current content
-      const currentContent = editor.getContent();
+      const content = editor.getContent();
 
-      // Decorate the content with spans
-      const decoratedContent = decorateContent(currentContent);
+      // Apply decorations
+      const decoratedContent = decorateContent(content);
 
-      // Only set content if it's changed to avoid unnecessary rendering
-      if (decoratedContent !== currentContent) {
-        // Use silent mode to prevent triggering change events
-        editor.undoManager.ignore(() => {
-          editor.setContent(decoratedContent, { no_events: true });
-        });
+      // Only set if there's a difference to avoid cursor jumps
+      if (content !== decoratedContent) {
+        // Use "silent" mode to prevent triggering change events
+        editor.setContent(decoratedContent, { no_events: true });
 
-        // Apply image error handling after content is set
-        applyImageErrorHandling();
-
-        // Position cursor correctly
-        if (bookmark || forceSetCursor) {
-          // Restore cursor to its previous position only if editor is not disabled
-          if (!editor.mode.isReadOnly()) {
-            editor.selection.moveToBookmark(bookmark);
-          }
-
-          // If we had a recently inserted variable and want to force cursor position
-          if (forceSetCursor && lastInsertedVariable && Date.now() - lastInsertedVariable.timestamp < 2000) {
-            // Find the inserted variable in the content
-            const variableRegex = new RegExp(
-              `<span[^>]*class="liquid-variable"[^>]*>${lastInsertedVariable.content.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</span>`,
-              'i'
-            );
-            const content = editor.getContent();
-            const match = variableRegex.exec(content);
-
-            if (match) {
-              // Look for this specific element in the DOM
-              const allVars = editor.dom.select('.liquid-variable');
-              for (const varElement of allVars) {
-                if (varElement.textContent === lastInsertedVariable.content) {
-                  // Create range after this element
-                  const range = editor.dom.createRng();
-                  range.setStartAfter(varElement);
-                  range.setEndAfter(varElement);
-
-                  // Set the cursor
-                  editor.selection.setRng(range);
-                  editor.focus();
-                  break;
-                }
-              }
-            }
-
-            // Clear last inserted variable
-            lastInsertedVariable = null;
-          }
+        // Restore cursor position if needed
+        if (bookmark) {
+          editor.selection.moveToBookmark(bookmark);
+          // editor.focus(); // Removing this as it can cause unexpected cursor jumps after restoring a bookmark
         }
       }
-    } catch (error) {
-      console.error('Error in decorateLiquidSyntax:', error);
+
+      // Apply image error handling after content is set
+      applyImageErrorHandling();
     } finally {
+      // Reset flag to allow next decoration
       isDecorating = false;
     }
   };
@@ -512,24 +372,14 @@ export const setupLiquidPlugin = (editor: TinyMCEEditor) => {
         decorateLiquidSyntax(withCursor);
         decorationTimeout = null;
       },
-      withCursor ? 50 : 200
-    ); // Faster response when cursor position matters
+      withCursor ? 200 : 800
+    ); // Use quicker response when preserving cursor
   };
 
   // Setup event handlers
   editor.on('KeyDown', handleDelete);
   editor.on('click', handleClick);
   editor.on('BeforeExecCommand', handleBeforeExecCommand);
-
-  // Watch for pasted content
-  editor.on('paste', (e) => {
-    // Schedule decoration after paste
-    setTimeout(() => {
-      if (!isDecorating) {
-        decorateLiquidSyntax(false);
-      }
-    }, 100);
-  });
 
   // Watch for inserted content
   editor.on('ExecCommand', (e: EditorEvent<ExecCommandEvent>) => {
